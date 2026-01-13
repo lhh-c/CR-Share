@@ -1,0 +1,10 @@
+# ninja log v7
+1	237	1768339147431711236	XiangYue_autogen/timestamp	a4e1595be2cbcde9
+1	237	1768339147431711236	XiangYue_autogen/mocs_compilation.cpp	a4e1595be2cbcde9
+1	237	1768339147431711236	/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/XiangYue_autogen/timestamp	a4e1595be2cbcde9
+1	237	1768339147431711236	/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/XiangYue_autogen/mocs_compilation.cpp	a4e1595be2cbcde9
+238	2121	1768339147443711500	CMakeFiles/XiangYue.dir/mainwindow.cpp.o	55dfa4190201760e
+238	2125	1768339147444231369	CMakeFiles/XiangYue.dir/loginwindow.cpp.o	6fe694f95cb12f37
+237	2254	1768339147443657627	CMakeFiles/XiangYue.dir/main.cpp.o	8f710a7229fe6872
+237	2307	1768339147443092300	CMakeFiles/XiangYue.dir/XiangYue_autogen/mocs_compilation.cpp.o	3803880f297e1080
+2307	2659	1768339149511756982	bin/XiangYue	73edb971b6d8714
