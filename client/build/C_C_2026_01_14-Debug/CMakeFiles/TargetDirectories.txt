@@ -1,5 +1,0 @@
-/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/CMakeFiles/XiangYue.dir
-/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/CMakeFiles/edit_cache.dir
-/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/CMakeFiles/rebuild_cache.dir
-/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/CMakeFiles/XiangYue_autogen_timestamp_deps.dir
-/run/media/root/f8209418-155f-45d9-8872-c4f94473eeb1/my submit/client/build/C_C_2026_01_14-Debug/CMakeFiles/XiangYue_autogen.dir

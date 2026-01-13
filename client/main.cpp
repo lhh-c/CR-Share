@@ -11,9 +11,13 @@ int main(int argc, char *argv[])
     app.setOrganizationName("重庆师范大学");
     
     LoginWindow loginWindow;
-    loginWindow.exec();
-
-    MainWindow mainWindow;
-    mainWindow.show();
-    return app.exec();
+    if (loginWindow.exec() == QDialog::Accepted) {
+        MainWindow mainWindow;
+        mainWindow.setUserId(loginWindow.getUserId());
+        mainWindow.setUserRole(loginWindow.getUserRole());
+        mainWindow.show();
+        return app.exec();
+    }
+    
+    return 0;
 }

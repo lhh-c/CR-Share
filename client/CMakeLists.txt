@@ -17,11 +17,15 @@ set(SOURCES
     main.cpp
     mainwindow.cpp
     loginwindow.cpp
+    searchresultwindow.cpp
+    resourcedetailwindow.cpp
 )
 
 set(HEADERS
     mainwindow.h
     loginwindow.h
+    searchresultwindow.h
+    resourcedetailwindow.h
 )
 
 # 创建可执行文件
