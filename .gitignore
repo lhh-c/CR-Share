@@ -1,0 +1,46 @@
+# Qt/C++ 构建文件
+client/build/
+client/*.o
+client/*.a
+*.so
+*.dll
+Makefile
+.qmake.stash
+.qtc_clangd/
+
+# Qt 生成文件
+ui_*.h
+moc_*.cpp
+*.moc
+*.qrc.depends
+
+# 可执行文件
+XiangYue
+*.app
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# 上传文件（通常不跟踪具体内容）
+uploads/
+!uploads/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 系统
+.DS_Store
+Thumbs.db
+
+*.user
+*.pro.user
+*.user.*
