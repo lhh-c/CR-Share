@@ -1,6 +1,19 @@
 # 工具函数
+import os
 import requests
-from server.config import AI_SERVICE_URL, AI_SERVICE_API_KEY, AI_SERVICE_TIMEOUT
+from werkzeug.utils import secure_filename
+from server.config import ALLOWED_EXTENSIONS, AI_SERVICE_URL, AI_SERVICE_API_KEY, AI_SERVICE_TIMEOUT
+
+
+def allowed_file(filename):
+    # 检查文件类型是否允许
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def get_file_extension(filename):
+    # 获取文件扩展名
+    return filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
 
 
 def call_ai_service(question, context=""):

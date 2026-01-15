@@ -57,6 +57,7 @@ void SearchResultWindow::loadSearchResults()
 {
     QUrl url("http://localhost:5000/api/resources");
     QUrlQuery query;
+    query.addQueryItem("status", "approved");
 
     if (!m_searchKeyword.isEmpty()) {
         query.addQueryItem("keyword", m_searchKeyword);
@@ -65,6 +66,8 @@ void SearchResultWindow::loadSearchResults()
     if (!m_tagFilter.isEmpty() && m_tagFilter != "") {
         query.addQueryItem("tag_id", m_tagFilter);
     }
+
+    query.addQueryItem("limit", "50");
 
     url.setQuery(query);
 

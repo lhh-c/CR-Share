@@ -24,6 +24,8 @@ class User(db.Model):
         lazy=True,
         foreign_keys='Resource.uploader_id'
     )
+    comments = db.relationship('Comment', backref='author', lazy=True)
+    subscriptions = db.relationship('Subscription', backref='user', lazy=True, cascade='all, delete-orphan')
     
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -60,6 +62,9 @@ class Resource(db.Model):
     download_count = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    tags = db.relationship('ResourceTag', backref='resource', lazy=True, cascade='all, delete-orphan')
+    comments = db.relationship('Comment', backref='resource', lazy=True, cascade='all, delete-orphan')
 
     def to_dict(self):
         return {
@@ -71,7 +76,72 @@ class Resource(db.Model):
             'file_type': self.file_type,
             'uploader': self.uploader.username if self.uploader else None,
             'uploader_id': self.uploader_id,
+            'status': self.status,
             'view_count': self.view_count,
             'download_count': self.download_count,
-            'created_at': self.created_at.isoformat() if self.created_at else None
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'tags': [rt.tag.name for rt in self.tags] if self.tags else []
         }
+
+
+class Tag(db.Model):
+    # 标签表
+    __tablename__ = 'tags'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    resources = db.relationship('ResourceTag', backref='tag', lazy=True)
+    subscriptions = db.relationship('Subscription', backref='tag', lazy=True)
+
+
+class ResourceTag(db.Model):
+    # 资源和标签的关联表
+    __tablename__ = 'resource_tags'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey('resources.id'), nullable=False)
+    tag_id = db.Column(db.Integer, db.ForeignKey('tags.id'), nullable=False)
+    
+    __table_args__ = (db.UniqueConstraint('resource_id', 'tag_id'),)
+
+
+class Comment(db.Model):
+    # 评论表
+    __tablename__ = 'comments'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    resource_id = db.Column(db.Integer, db.ForeignKey('resources.id'), nullable=False)
+    author_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comments.id'), nullable=True)
+    is_ai_response = db.Column(db.Boolean, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy=True)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'resource_id': self.resource_id,
+            'author': self.author.username if self.author else None,
+            'author_id': self.author_id,
+            'content': self.content,
+            'parent_id': self.parent_id,
+            'is_ai_response': self.is_ai_response,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'replies': [reply.to_dict() for reply in self.replies]
+        }
+
+
+class Subscription(db.Model):
+    # 订阅表
+    __tablename__ = 'subscriptions'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    tag_id = db.Column(db.Integer, db.ForeignKey('tags.id'), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (db.UniqueConstraint('user_id', 'tag_id'),)

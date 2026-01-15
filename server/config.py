@@ -33,6 +33,9 @@ AI_SERVICE_URL = os.environ.get('AI_SERVICE_URL', '')
 AI_SERVICE_API_KEY = os.environ.get('AI_SERVICE_API_KEY', '')
 AI_SERVICE_TIMEOUT = 5
 
+# 允许的文件类型
+ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 'png'}
+
 # 角色
 ROLE_STUDENT = 'student'
 ROLE_TEACHER = 'teacher'
