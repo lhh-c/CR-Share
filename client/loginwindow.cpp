@@ -34,7 +34,8 @@ LoginWindow::LoginWindow(QWidget *parent)
     layout->addLayout(btnLayout);
     
     m_networkManager = new QNetworkAccessManager(this);
-
+    connect(m_networkManager, &QNetworkAccessManager::finished, 
+            this, &LoginWindow::onNetworkReply);
     connect(m_loginBtn, &QPushButton::clicked, this, &LoginWindow::onLoginClicked);
     connect(m_registerBtn, &QPushButton::clicked, this, &LoginWindow::onRegisterClicked);
 }
@@ -43,33 +44,73 @@ void LoginWindow::onLoginClicked()
 {
     QString username = m_usernameEdit->text();
     QString password = m_passwordEdit->text();
-
+    
     if (username.isEmpty() || password.isEmpty()) {
         QMessageBox::warning(this, "警告", "请输入用户名和密码");
         return;
     }
-
-    m_userId = 1;
-    m_userRole = "student";
-
-    QMessageBox::information(this, "成功", "登录成功");
-    accept();
+    
+    QJsonObject data;
+    data["username"] = username;
+    data["password"] = password;
+    
+    QNetworkRequest request{QUrl("http://localhost:5000/api/auth/login")};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    
+    QJsonDocument doc(data);
+    QNetworkReply *reply = m_networkManager->post(request, doc.toJson());
+    reply->setProperty("action", "login");
 }
 
 void LoginWindow::onRegisterClicked()
 {
     QString username = m_usernameEdit->text();
     QString password = m_passwordEdit->text();
-
+    
     if (username.isEmpty() || password.isEmpty()) {
         QMessageBox::warning(this, "警告", "请输入用户名和密码");
         return;
     }
-
-    QMessageBox::information(this, "成功", "注册成功，请登录");
+    
+    QJsonObject data;
+    data["username"] = username;
+    data["password"] = password;
+    data["email"] = username + "@example.com";
+    data["role"] = "student";
+    
+    QNetworkRequest request{QUrl("http://localhost:5000/api/auth/register")};
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    
+    QJsonDocument doc(data);
+    QNetworkReply *reply = m_networkManager->post(request, doc.toJson());
+    reply->setProperty("action", "register");
 }
 
 void LoginWindow::onNetworkReply(QNetworkReply *reply)
 {
+    QString action = reply->property("action").toString();
+    
+    if (reply->error() != QNetworkReply::NoError) {
+        QMessageBox::critical(this, "错误", 
+                             QString("网络错误: %1").arg(reply->errorString()));
+        reply->deleteLater();
+        return;
+    }
+    
+    QByteArray response = reply->readAll();
+    QJsonDocument doc = QJsonDocument::fromJson(response);
+    QJsonObject json = doc.object();
+    
+    if (json.contains("error")) {
+        QMessageBox::warning(this, "错误", json["error"].toString());
+    } else if (action == "login") {
+        m_userId = json["user_id"].toInt();
+        m_userRole = json["user"].toObject()["role"].toString();
+        QMessageBox::information(this, "成功", "登录成功");
+        accept();
+    } else if (action == "register") {
+        QMessageBox::information(this, "成功", "注册成功，请登录");
+    }
+    
     reply->deleteLater();
 }
