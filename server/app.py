@@ -118,47 +118,23 @@ def login():
 
 @app.route('/api/resources', methods=['GET'])
 def get_resources():
-    # 获取资源列表（先用简单的假数据）
+    # 获取资源列表
     keyword = request.args.get('keyword') or request.args.get('search')
 
-    demo_resources = [
-        {
-            'id': 1,
-            'title': '数据结构期末复习资料',
-            'description': '一些常见题型和例题',
-            'file_name': 'ds_review.pdf',
-            'file_size': 123456,
-            'file_type': 'pdf',
-            'uploader': 'demo_user',
-            'uploader_id': 1,
-            'view_count': 12,
-            'download_count': 5,
-            'created_at': None
-        },
-        {
-            'id': 2,
-            'title': '操作系统笔记整理',
-            'description': '进程、线程、内存管理整理',
-            'file_name': 'os_notes.docx',
-            'file_size': 234567,
-            'file_type': 'docx',
-            'uploader': 'demo_user2',
-            'uploader_id': 2,
-            'view_count': 20,
-            'download_count': 9,
-            'created_at': None
-        }
-    ]
+    resources_query = Resource.query
 
     if keyword and keyword.strip():
-        kw = keyword.strip()
-        filtered = []
-        for r in demo_resources:
-            if kw in r.get('title', '') or kw in r.get('description', ''):
-                filtered.append(r)
-        return jsonify({'resources': filtered}), 200
+        keyword = keyword.strip()
+        resources_query = resources_query.filter(
+            or_(
+                Resource.title.ilike(f'%{keyword}%'),
+                Resource.description.ilike(f'%{keyword}%')
+            )
+        )
 
-    return jsonify({'resources': demo_resources}), 200
+    resources = resources_query.order_by(Resource.created_at.desc()).all()
+
+    return jsonify({'resources': [r.to_dict() for r in resources]}), 200
 
 
 @app.route('/api/resources/<int:resource_id>/ai-ask', methods=['POST'])
