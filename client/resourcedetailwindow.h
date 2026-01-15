@@ -21,6 +21,7 @@ public:
 
 private slots:
     void onDownloadClicked();
+    void onCommentSubmit();
     void onAiAsk();
     void onNetworkReply(QNetworkReply *reply);
 
@@ -28,6 +29,7 @@ private:
     void setupUI();
     void setupNetworkManager();
     void loadResourceDetails();
+    void loadComments();
     QJsonObject makeRequest(const QString &url, const QString &method = "GET",
                            const QJsonObject &data = QJsonObject());
     
@@ -36,6 +38,10 @@ private:
     
     QTextEdit *m_resourceDetails;
     QPushButton *m_downloadBtn;
+    QGroupBox *m_commentGroup;
+    QTextEdit *m_commentsDisplay;
+    QTextEdit *m_commentEdit;
+    QPushButton *m_commentSubmitBtn;
     QGroupBox *m_aiGroup;
     QLineEdit *m_aiQuestionEdit;
     QPushButton *m_aiAskBtn;

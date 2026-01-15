@@ -22,6 +22,7 @@ ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *
     setupUI();
     setupNetworkManager();
     loadResourceDetails();
+    loadComments();
     activateWindow();
     raise();
 }
@@ -40,6 +41,21 @@ void ResourceDetailWindow::setupUI()
     m_downloadBtn = new QPushButton("下载资源");
     layout->addWidget(m_downloadBtn);
     connect(m_downloadBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onDownloadClicked);
+    
+    m_commentGroup = new QGroupBox("评论");
+    QVBoxLayout *commentLayout = new QVBoxLayout();
+    m_commentsDisplay = new QTextEdit();
+    m_commentsDisplay->setReadOnly(true);
+    m_commentEdit = new QTextEdit();
+    m_commentEdit->setMaximumHeight(80);
+    m_commentEdit->setPlaceholderText("输入评论...");
+    m_commentSubmitBtn = new QPushButton("发表评论");
+    commentLayout->addWidget(m_commentsDisplay);
+    commentLayout->addWidget(m_commentEdit);
+    commentLayout->addWidget(m_commentSubmitBtn);
+    m_commentGroup->setLayout(commentLayout);
+    layout->addWidget(m_commentGroup);
+    connect(m_commentSubmitBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onCommentSubmit);
     
     m_aiGroup = new QGroupBox("AI提问");
     QVBoxLayout *aiLayout = new QVBoxLayout();
@@ -69,6 +85,12 @@ void ResourceDetailWindow::loadResourceDetails()
     makeRequest(url, "GET");
 }
 
+void ResourceDetailWindow::loadComments()
+{
+    QString url = QString("http://localhost:5000/api/resources/%1/comments").arg(m_resourceId);
+    makeRequest(url, "GET");
+}
+
 void ResourceDetailWindow::onDownloadClicked()
 {
     QString url = QString("http://localhost:5000/api/resources/%1/download").arg(m_resourceId);
@@ -79,6 +101,21 @@ void ResourceDetailWindow::onDownloadClicked()
     QNetworkReply *reply = m_networkManager->get(request);
     reply->setProperty("requestType", "download");
     reply->setProperty("resourceId", m_resourceId);
+}
+
+void ResourceDetailWindow::onCommentSubmit()
+{
+    QString content = m_commentEdit->toPlainText().trimmed();
+    if (content.isEmpty()) {
+        QMessageBox::warning(this, "错误", "评论内容不能为空");
+        return;
+    }
+    
+    QJsonObject data;
+    data["content"] = content;
+    
+    QString url = QString("http://localhost:5000/api/resources/%1/comments").arg(m_resourceId);
+    makeRequest(url, "POST", data);
 }
 
 void ResourceDetailWindow::onAiAsk()
@@ -154,6 +191,14 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         return;
     }
     
+    if (statusCode == 201 && urlStr.contains("/comments")) {
+        QMessageBox::information(this, "成功", "评论发表成功！");
+        m_commentEdit->clear();
+        loadComments();
+        reply->deleteLater();
+        return;
+    }
+    
     if (statusCode < 200 || statusCode >= 300) {
         QMessageBox::warning(this, "错误", QString("服务器错误 %1").arg(statusCode));
         reply->deleteLater();
@@ -172,7 +217,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     QJsonObject json = doc.object();
     
     if (urlStr.contains(QString("/api/resources/%1").arg(m_resourceId)) &&
-        !urlStr.contains("/ai-ask") && !urlStr.contains("/download")) {
+        !urlStr.contains("/comments") && !urlStr.contains("/ai-ask") && !urlStr.contains("/download")) {
         QString details = QString("标题: %1\n\n描述: %2\n\n上传者: %3\n\n"
                                  "浏览量: %4\n下载量: %5")
                          .arg(json["title"].toString())
@@ -181,6 +226,48 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                          .arg(json["view_count"].toInt())
                          .arg(json["download_count"].toInt());
         m_resourceDetails->setPlainText(details);
+    }
+    
+    if (urlStr.contains("/comments") && json.contains("comments")) {
+        QJsonArray comments = json["comments"].toArray();
+        QString commentsText;
+
+        if (comments.isEmpty()) {
+            commentsText = "暂无评论，快来抢沙发吧~";
+        } else {
+            for (const QJsonValue &val : comments) {
+                QJsonObject c = val.toObject();
+                QString author = c["author"].toString("匿名");
+                QString rawTime = c["created_at"].toString("未知时间");
+
+                QString formattedTime = rawTime;
+                if (rawTime.contains("T")) {
+                    QString datePart = rawTime.split("T").first();
+                    QString timePart = rawTime.split("T").last().left(8);
+                    formattedTime = QString("（%1 %2）").arg(datePart).arg(timePart);
+                }
+
+                QString content = c["content"].toString().trimmed();
+
+                // 修改后的拼接：第一行是 “用户名 （年-月-日 时:分:秒）”
+                commentsText += QString("%1 %2\n%3\n────────────────────\n\n")
+                                    .arg(author)
+                                    .arg(formattedTime)
+                                    .arg(content);
+            }
+        }
+
+        m_commentsDisplay->setPlainText(commentsText);
+
+        QTimer::singleShot(150, this, [this]() {
+            QScrollBar *scroll = m_commentsDisplay->verticalScrollBar();
+            if (scroll) {
+                scroll->setValue(scroll->maximum());
+            }
+            m_commentsDisplay->ensureCursorVisible();
+            m_commentsDisplay->repaint();
+            QApplication::processEvents();
+        });
     }
     
     if (urlStr.contains("/ai-ask") && json.contains("answer")) {
