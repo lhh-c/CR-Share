@@ -20,18 +20,22 @@ public:
     explicit ResourceDetailWindow(int resourceId, int userId, QWidget *parent = nullptr);
 
 private slots:
+    void onDownloadClicked();
     void onAiAsk();
     void onNetworkReply(QNetworkReply *reply);
 
 private:
     void setupUI();
     void setupNetworkManager();
+    void loadResourceDetails();
     QJsonObject makeRequest(const QString &url, const QString &method = "GET",
                            const QJsonObject &data = QJsonObject());
     
     int m_resourceId;
     int m_userId;
     
+    QTextEdit *m_resourceDetails;
+    QPushButton *m_downloadBtn;
     QGroupBox *m_aiGroup;
     QLineEdit *m_aiQuestionEdit;
     QPushButton *m_aiAskBtn;

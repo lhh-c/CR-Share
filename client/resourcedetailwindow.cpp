@@ -4,6 +4,11 @@
 #include <QMessageBox>
 #include <QUrl>
 #include <QNetworkRequest>
+#include <QFileDialog>
+#include <QFile>
+#include <QDir>
+#include <QTimer>
+#include <QScrollBar>
 #include <QApplication>
 
 ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *parent)
@@ -16,6 +21,7 @@ ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *
     
     setupUI();
     setupNetworkManager();
+    loadResourceDetails();
     activateWindow();
     raise();
 }
@@ -26,6 +32,14 @@ void ResourceDetailWindow::setupUI()
     setCentralWidget(centralWidget);
     
     QVBoxLayout *layout = new QVBoxLayout(centralWidget);
+    
+    m_resourceDetails = new QTextEdit();
+    m_resourceDetails->setReadOnly(true);
+    layout->addWidget(m_resourceDetails);
+    
+    m_downloadBtn = new QPushButton("下载资源");
+    layout->addWidget(m_downloadBtn);
+    connect(m_downloadBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onDownloadClicked);
     
     m_aiGroup = new QGroupBox("AI提问");
     QVBoxLayout *aiLayout = new QVBoxLayout();
@@ -47,6 +61,24 @@ void ResourceDetailWindow::setupNetworkManager()
     m_networkManager = new QNetworkAccessManager(this);
     connect(m_networkManager, &QNetworkAccessManager::finished,
             this, &ResourceDetailWindow::onNetworkReply);
+}
+
+void ResourceDetailWindow::loadResourceDetails()
+{
+    QString url = QString("http://localhost:5000/api/resources/%1").arg(m_resourceId);
+    makeRequest(url, "GET");
+}
+
+void ResourceDetailWindow::onDownloadClicked()
+{
+    QString url = QString("http://localhost:5000/api/resources/%1/download").arg(m_resourceId);
+    
+    QNetworkRequest request{QUrl(url)};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+    
+    QNetworkReply *reply = m_networkManager->get(request);
+    reply->setProperty("requestType", "download");
+    reply->setProperty("resourceId", m_resourceId);
 }
 
 void ResourceDetailWindow::onAiAsk()
@@ -100,6 +132,28 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     QString urlStr = reply->property("url").toString();
     QString method = reply->property("method").toString();
     
+    if (reply->property("requestType").toString() == "download") {
+        QByteArray fileData = reply->readAll();
+        QString suggestedFileName = QString("resource_%1.pdf").arg(m_resourceId);
+        
+        QString savePath = QFileDialog::getSaveFileName(
+            this, "保存资源文件", QDir::homePath() + "/" + suggestedFileName,
+            "PDF 文件 (*.pdf);;所有文件 (*.*)");
+        
+        if (!savePath.isEmpty()) {
+            QFile file(savePath);
+            if (file.open(QIODevice::WriteOnly)) {
+                file.write(fileData);
+                file.close();
+                QMessageBox::information(this, "成功", "文件下载成功！");
+            } else {
+                QMessageBox::warning(this, "错误", "无法保存文件");
+            }
+        }
+        reply->deleteLater();
+        return;
+    }
+    
     if (statusCode < 200 || statusCode >= 300) {
         QMessageBox::warning(this, "错误", QString("服务器错误 %1").arg(statusCode));
         reply->deleteLater();
@@ -116,6 +170,18 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     }
     
     QJsonObject json = doc.object();
+    
+    if (urlStr.contains(QString("/api/resources/%1").arg(m_resourceId)) &&
+        !urlStr.contains("/ai-ask") && !urlStr.contains("/download")) {
+        QString details = QString("标题: %1\n\n描述: %2\n\n上传者: %3\n\n"
+                                 "浏览量: %4\n下载量: %5")
+                         .arg(json["title"].toString())
+                         .arg(json["description"].toString())
+                         .arg(json["uploader"].toString())
+                         .arg(json["view_count"].toInt())
+                         .arg(json["download_count"].toInt());
+        m_resourceDetails->setPlainText(details);
+    }
     
     if (urlStr.contains("/ai-ask") && json.contains("answer")) {
         m_aiAnswerDisplay->setPlainText(json["answer"].toString());

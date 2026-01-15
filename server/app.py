@@ -1,5 +1,5 @@
 # 服务器主文件
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from sqlalchemy import or_
 import os
@@ -137,6 +137,38 @@ def get_resources():
     return jsonify({'resources': [r.to_dict() for r in resources]}), 200
 
 
+@app.route('/api/resources/<int:resource_id>/download', methods=['GET'])
+@require_auth
+def download_resource(user, resource_id):
+    # 下载资源
+    resource = Resource.query.get_or_404(resource_id)
+
+    file_path = os.path.join(app.config['UPLOAD_FOLDER'], resource.file_path)
+
+    if not os.path.exists(file_path):
+        return jsonify({
+            'error': '文件不存在于服务器',
+            'checked_path': file_path
+        }), 404
+
+    # 下载次数+1
+    resource.download_count += 1
+    db.session.commit()
+
+    try:
+        response = send_file(
+            file_path,
+            as_attachment=True,
+            download_name=resource.file_name,
+            mimetype='application/octet-stream'
+        )
+        return response
+    except Exception as e:
+        return jsonify({
+            'error': '文件发送失败',
+            'detail': str(e)
+        }), 500
+
 @app.route('/api/resources/<int:resource_id>/ai-ask', methods=['POST'])
 @require_auth
 def ai_ask(user, resource_id):
@@ -156,6 +188,17 @@ def ai_ask(user, resource_id):
         return jsonify({'answer': ai_answer}), 200
     else:
         return jsonify({'error': 'AI服务暂时不可用'}), 503
+
+@app.route('/api/resources/<int:resource_id>', methods=['GET'])
+def get_resource(resource_id):
+    # 获取单个资源详情
+    resource = Resource.query.get_or_404(resource_id)
+
+    resource.view_count += 1
+    db.session.commit()
+
+    return jsonify(resource.to_dict()), 200
+
 
 if __name__ == '__main__':
     with app.app_context():
