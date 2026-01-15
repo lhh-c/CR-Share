@@ -11,10 +11,12 @@
 #include <QDebug>
 
 SearchResultWindow::SearchResultWindow(const QString &searchKeyword,
+                                       const QString &tagFilter,
                                        int userId,
                                        QWidget *parent)
     : QMainWindow(parent)
     , m_searchKeyword(searchKeyword.trimmed())
+    , m_tagFilter(tagFilter)
     , m_userId(userId)
 {
     setWindowTitle("搜索结果 - 享阅");
@@ -60,6 +62,10 @@ void SearchResultWindow::loadSearchResults()
         query.addQueryItem("keyword", m_searchKeyword);
     }
 
+    if (!m_tagFilter.isEmpty() && m_tagFilter != "") {
+        query.addQueryItem("tag_id", m_tagFilter);
+    }
+
     url.setQuery(query);
 
     QNetworkRequest request(url);
@@ -68,8 +74,9 @@ void SearchResultWindow::loadSearchResults()
     QNetworkReply *reply = m_networkManager->get(request);
     reply->setProperty("requestType", "searchResults");
 
-    m_statusLabel->setText(QString("搜索中... (关键词: %1)")
-                               .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword));
+    m_statusLabel->setText(QString("搜索中... (关键词: %1, 标签: %2)")
+                               .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
+                               .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
 }
 
 void SearchResultWindow::onResourceSelected(QListWidgetItem *item)
@@ -119,13 +126,15 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
     m_resultList->clear();
 
     if (resources.isEmpty()) {
-        m_statusLabel->setText(QString("未找到匹配资源\n关键词: %1")
-                                   .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword));
-        m_resultList->addItem("没有匹配的结果，试试其他关键词吧~");
+        m_statusLabel->setText(QString("未找到匹配资源\n关键词: %1 | 标签: %2")
+                                   .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
+                                   .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
+        m_resultList->addItem("没有匹配的结果，试试其他关键词或标签吧~");
     } else {
-        m_statusLabel->setText(QString("找到 %1 个匹配资源\n关键词: %2")
+        m_statusLabel->setText(QString("找到 %1 个匹配资源\n关键词: %2 | 标签: %3")
                                    .arg(resources.size())
-                                   .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword));
+                                   .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
+                                   .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
 
         for (const QJsonValue &val : resources) {
             QJsonObject res = val.toObject();

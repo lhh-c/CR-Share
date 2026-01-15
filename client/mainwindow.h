@@ -36,6 +36,7 @@ private slots:
     void onResourceSelected(QListWidgetItem *item);
     void onRefreshClicked();
     void loadResources();
+    void loadTags();
     void onNetworkReply(QNetworkReply *reply);
 
 private:
@@ -47,6 +48,7 @@ private:
     void showSuccess(const QString &message);
     
     QLineEdit *m_searchEdit;
+    QComboBox *m_tagFilter;
     QPushButton *m_searchBtn;
     QPushButton *m_refreshBtn;
     QListWidget *m_recommendedResourcesList;

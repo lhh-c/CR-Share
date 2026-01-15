@@ -16,6 +16,7 @@ class SearchResultWindow : public QMainWindow
 
 public:
     explicit SearchResultWindow(const QString &searchKeyword,
+                                const QString &tagFilter,
                                 int userId,
                                 QWidget *parent = nullptr);
 
@@ -34,6 +35,7 @@ private:
     QNetworkAccessManager *m_networkManager;
 
     QString m_searchKeyword;
+    QString m_tagFilter;
     int m_userId;
 };
 

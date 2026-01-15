@@ -218,13 +218,20 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     
     if (urlStr.contains(QString("/api/resources/%1").arg(m_resourceId)) &&
         !urlStr.contains("/comments") && !urlStr.contains("/ai-ask") && !urlStr.contains("/download")) {
+        QStringList tagList;
+        QJsonArray tagsArray = json["tags"].toArray();
+        for (const QJsonValue &v : tagsArray) {
+            tagList << v.toString();
+        }
+        
         QString details = QString("标题: %1\n\n描述: %2\n\n上传者: %3\n\n"
-                                 "浏览量: %4\n下载量: %5")
+                                 "浏览量: %4\n下载量: %5\n\n标签: %6")
                          .arg(json["title"].toString())
                          .arg(json["description"].toString())
                          .arg(json["uploader"].toString())
                          .arg(json["view_count"].toInt())
-                         .arg(json["download_count"].toInt());
+                         .arg(json["download_count"].toInt())
+                         .arg(tagList.join(", "));
         m_resourceDetails->setPlainText(details);
     }
     

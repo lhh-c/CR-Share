@@ -21,6 +21,7 @@ MainWindow::MainWindow(QWidget *parent)
     setupUI();
     setupNetworkManager();
     loadResources();
+    loadTags();
 }
 
 void MainWindow::setUserId(int userId)
@@ -46,9 +47,12 @@ void MainWindow::setupUI()
     QHBoxLayout *searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit();
     m_searchEdit->setPlaceholderText("搜索资源...");
+    m_tagFilter = new QComboBox();
+    m_tagFilter->addItem("全部标签", "");
     m_searchBtn = new QPushButton("搜索");
     m_refreshBtn = new QPushButton("刷新");
     searchLayout->addWidget(m_searchEdit);
+    searchLayout->addWidget(m_tagFilter);
     searchLayout->addWidget(m_searchBtn);
     searchLayout->addWidget(m_refreshBtn);
     mainLayout->addLayout(searchLayout);
@@ -143,7 +147,28 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
     }
     QJsonObject json = doc.object();
 
-    if (urlStr.contains("/api/resources") && !urlStr.contains("/api/resources/")) {
+    if (urlStr.contains("/api/tags")) {
+        QJsonArray tagsArray = json["tags"].toArray();
+
+        if (m_tagFilter) {
+            m_tagFilter->clear();
+            m_tagFilter->addItem("全部标签", "");
+
+            for (const QJsonValue &val : tagsArray) {
+                if (!val.isObject()) {
+                    continue;
+                }
+                QJsonObject tag = val.toObject();
+                QString name = tag.value("name").toString();
+                int id = tag.value("id").toInt();
+                if (name.isEmpty()) {
+                    continue;
+                }
+                m_tagFilter->addItem(name, id);
+            }
+        }
+    }
+    else if (urlStr.contains("/api/resources") && !urlStr.contains("/api/resources/")) {
         QJsonArray resources = json["resources"].toArray();
 
         m_recommendedResourcesList->clear();
@@ -168,8 +193,9 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
 void MainWindow::onSearchClicked()
 {
     QString keyword = m_searchEdit->text();
+    QString tag = m_tagFilter->currentData().toString();
 
-    SearchResultWindow *searchWindow = new SearchResultWindow(keyword, m_userId, this);
+    SearchResultWindow *searchWindow = new SearchResultWindow(keyword, tag, m_userId, this);
     searchWindow->show();
 }
 
@@ -192,6 +218,11 @@ void MainWindow::loadResources()
 {
     QString url = "http://localhost:5000/api/resources";
     makeRequest(url, "GET");
+}
+
+void MainWindow::loadTags()
+{
+    makeRequest("http://localhost:5000/api/tags", "GET");
 }
 
 void MainWindow::showError(const QString &message)
