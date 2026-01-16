@@ -18,10 +18,12 @@
 #include <QHeaderView>
 #include <QDateTime>
 
-ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *parent)
+ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, const QString &userRole, const QString &viewMode, QWidget *parent)
     : QMainWindow(parent)
     , m_resourceId(resourceId)
     , m_userId(userId)
+    , m_userRole(userRole)
+    , m_viewMode(viewMode)
 {
     m_fileType = "";
     m_lastPdfPath = "";
@@ -63,9 +65,22 @@ void ResourceDetailWindow::setupUI()
     m_reportBtn = new QPushButton("举报资源");
     layout->addWidget(m_reportBtn);
     connect(m_reportBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onReportClicked);
+
+    // 删除资源按钮（权限判定后再显示）
+    m_deleteResourceBtn = new QPushButton("删除资源");
+    m_deleteResourceBtn->setVisible(false);
+    layout->addWidget(m_deleteResourceBtn);
+    connect(m_deleteResourceBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onDeleteResourceClicked);
     
     // 评论区域
     m_commentGroup = new QGroupBox("评论");
+
+    // 审核态精简视图：隐藏举报/评论/AI，保留下载/预览/删除
+    bool isModeratorView = (m_viewMode == "moderator");
+    if (isModeratorView) {
+        m_reportBtn->setVisible(false);
+    }
+
     QVBoxLayout *commentLayout = new QVBoxLayout();
 
     m_replyToLabel = new QLabel("当前回复对象：无");
@@ -122,6 +137,10 @@ void ResourceDetailWindow::setupUI()
     
     // AI提问区域
     m_aiGroup = new QGroupBox("AI提问");
+    if (isModeratorView) {
+        m_commentGroup->setVisible(false);
+    }
+
     QVBoxLayout *aiLayout = new QVBoxLayout();
     m_aiQuestionEdit = new QLineEdit();
     m_aiQuestionEdit->setPlaceholderText("输入问题...");
@@ -134,6 +153,12 @@ void ResourceDetailWindow::setupUI()
     m_aiGroup->setLayout(aiLayout);
     layout->addWidget(m_aiGroup);
     connect(m_aiAskBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onAiAsk);
+
+    if (isModeratorView) {
+        m_aiGroup->setVisible(false);
+    }
+
+    updateUIForRoleAndOwnership();
 }
 
 void ResourceDetailWindow::setupNetworkManager()
@@ -269,6 +294,39 @@ void ResourceDetailWindow::onCommentSubmit()
 
     QString url = QString("http://localhost:5000/api/resources/%1/comments").arg(m_resourceId);
     makeRequest(url, "POST", data);
+}
+
+void ResourceDetailWindow::updateUIForRoleAndOwnership()
+{
+    bool isModeratorView = (m_viewMode == "moderator");
+    bool isModerator = (m_userRole == "moderator");
+
+    bool canDelete = false;
+    if (isModerator) {
+        canDelete = true;
+    } else if (m_uploaderId > 0 && m_uploaderId == m_userId) {
+        canDelete = true;
+    }
+
+    if (m_deleteResourceBtn) {
+        m_deleteResourceBtn->setVisible(canDelete);
+        if (isModeratorView) {
+            m_deleteResourceBtn->setVisible(true);
+        }
+    }
+}
+
+void ResourceDetailWindow::onDeleteResourceClicked()
+{
+    auto ret = QMessageBox::warning(this, "确认", "确定要删除该资源吗？此操作不可恢复。", QMessageBox::Yes | QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
+    QString url = QString("http://localhost:5000/api/resources/%1").arg(m_resourceId);
+    QNetworkRequest request{QUrl(url)};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+
+    QNetworkReply *reply = m_networkManager->deleteResource(request);
+    reply->setProperty("requestType", "delete_resource");
 }
 
 void ResourceDetailWindow::onAiAsk()
@@ -435,6 +493,15 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         return;
     }
     
+    // 处理删除资源
+    if (reply->property("requestType").toString() == "delete_resource") {
+        QMessageBox::information(this, "成功", "资源已删除");
+        emit resourceDeleted(m_resourceId);
+        close();
+        reply->deleteLater();
+        return;
+    }
+
     // 处理举报提交成功
     if (reply->property("requestType").toString() == "report") {
         QMessageBox::information(this, "成功", "举报已提交，感谢您的反馈！");
@@ -487,6 +554,9 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                          .arg(json["download_count"].toInt())
                          .arg(tagList.join(", "));
         m_resourceDetails->setPlainText(details);
+
+        m_uploaderId = json["uploader_id"].toInt(0);
+        updateUIForRoleAndOwnership();
 
         m_fileType = json["file_type"].toString();
         if (m_previewPdfBtn) {

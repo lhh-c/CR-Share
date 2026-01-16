@@ -14,11 +14,13 @@
 SearchResultWindow::SearchResultWindow(const QString &searchKeyword,
                                        const QString &tagFilter,
                                        int userId,
+                                       const QString &userRole,
                                        QWidget *parent)
     : QMainWindow(parent)
     , m_searchKeyword(searchKeyword.trimmed())
     , m_tagFilter(tagFilter)
     , m_userId(userId)
+    , m_userRole(userRole)
 {
     setWindowTitle("搜索结果 - 享阅");
     setMinimumSize(800, 600);
@@ -158,7 +160,10 @@ void SearchResultWindow::onResourceSelected(QListWidgetItem *item)
     int resourceId = item->data(Qt::UserRole).toInt();
     if (resourceId <= 0) return;
 
-    ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, this);
+    ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, m_userRole, "user", this);
+    connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+        loadSearchResults();
+    });
     detailWindow->show();
 }
 

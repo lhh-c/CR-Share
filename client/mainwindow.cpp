@@ -257,7 +257,10 @@ void MainWindow::setupUI()
         if (!item) return;
         int resId = item->data(Qt::UserRole).toInt();
         if (resId <= 0) return;
-        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, this);
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, m_userRole, "moderator", this);
+        connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+            loadPendingResources();
+        });
         detailWindow->show();
     });
 
@@ -608,7 +611,10 @@ void MainWindow::onNotificationsClicked()
     w->setAttribute(Qt::WA_DeleteOnClose);
     connect(w, &NotificationWindow::openResourceRequested, this, [this](int resourceId) {
         if (resourceId <= 0) return;
-        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, this);
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, m_userRole, "user", this);
+        connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+            loadResources();
+        });
         detailWindow->show();
     });
     w->show();
@@ -641,7 +647,7 @@ void MainWindow::onSearchClicked()
     QString keyword = m_searchEdit->text();
     QString tag = m_tagFilter->currentData().toString();
 
-    SearchResultWindow *searchWindow = new SearchResultWindow(keyword, tag, m_userId, this);
+    SearchResultWindow *searchWindow = new SearchResultWindow(keyword, tag, m_userId, m_userRole, this);
     searchWindow->show();
 }
 
@@ -657,7 +663,10 @@ void MainWindow::onResourceSelected(QListWidgetItem *item)
     int resourceId = item->data(Qt::UserRole).toInt();
     if (resourceId <= 0) return;
 
-    ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, this);
+    ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, m_userRole, "user", this);
+    connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+        loadResources();
+    });
     detailWindow->show();
 }
 
@@ -837,7 +846,10 @@ void MainWindow::setupSubscriptionsDialog()
         if (!item) return;
         int resId = item->data(Qt::UserRole).toInt();
         if (resId <= 0) return;
-        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, this);
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, m_userRole, "user", this);
+        connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+            loadSubscriptions();
+        });
         detailWindow->show();
     });
 }

@@ -19,7 +19,10 @@ class ResourceDetailWindow : public QMainWindow
     Q_OBJECT
 
 public:
-    explicit ResourceDetailWindow(int resourceId, int userId, QWidget *parent = nullptr);
+    explicit ResourceDetailWindow(int resourceId, int userId, const QString &userRole, const QString &viewMode = "user", QWidget *parent = nullptr);
+
+signals:
+    void resourceDeleted(int resourceId);
 
 private slots:
     void onDownloadClicked();
@@ -29,6 +32,7 @@ private slots:
     void onCancelReply();
     void onAiAsk();
     void onNetworkReply(QNetworkReply *reply);
+    void onDeleteResourceClicked();
 
 private:
     void setupUI();
@@ -37,14 +41,19 @@ private:
     void loadComments();
     QJsonObject makeRequest(const QString &url, const QString &method = "GET",
                            const QJsonObject &data = QJsonObject());
+    void updateUIForRoleAndOwnership();
     
     int m_resourceId;
     int m_userId;
+    QString m_userRole;
+    QString m_viewMode; // "user" 或 "moderator"
+    int m_uploaderId = 0;
     
     QTextEdit *m_resourceDetails;
     QPushButton *m_downloadBtn;
     QPushButton *m_previewPdfBtn;
     QPushButton *m_reportBtn;
+    QPushButton *m_deleteResourceBtn;
 
     QString m_fileType;
     QString m_lastPdfPath;

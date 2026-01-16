@@ -20,6 +20,7 @@ public:
     explicit SearchResultWindow(const QString &searchKeyword,
                                 const QString &tagFilter,
                                 int userId,
+                                const QString &userRole,
                                 QWidget *parent = nullptr);
 
 private slots:
@@ -49,6 +50,7 @@ private:
     QString m_searchKeyword;
     QString m_tagFilter;
     int m_userId;
+    QString m_userRole;
 };
 
 #endif // SEARCHRESULTWINDOW_H

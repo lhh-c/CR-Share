@@ -2,19 +2,21 @@
 享阅服务器主应用
 """
 from flask import Flask, request, jsonify, send_file
+from functools import wraps
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from sqlalchemy import or_
+from sqlalchemy.exc import SQLAlchemyError
 import os
 from datetime import datetime
 from pathlib import Path
 
 from server.config import (
-    SQLALCHEMY_DATABASE_URI, UPLOAD_FOLDER, 
-    MAX_CONTENT_LENGTH, ALLOWED_EXTENSIONS, 
+    SQLALCHEMY_DATABASE_URI, UPLOAD_FOLDER,
+    MAX_CONTENT_LENGTH, ALLOWED_EXTENSIONS,
     ROLE_MODERATOR
 )
-from server.models import db, User, Resource, Tag, ResourceTag, Comment, Subscription
+from server.models import db, User, Resource, Tag, ResourceTag, Comment, Subscription, Report, Notification
 from server.utils import allowed_file, call_ai_service
 
 app = Flask(__name__)
@@ -27,7 +29,7 @@ CORS(app)  # 允许跨域请求
 
 db.init_app(app)
 
-# 会话管理（简化版，生产环境应使用JWT）
+# 会话管理
 current_user_id = None
 
 
@@ -41,18 +43,19 @@ def get_current_user():
 
 def require_auth(f):
     """认证装饰器"""
+    @wraps(f)
     def wrapper(*args, **kwargs):
         user = get_current_user()
         if not user:
             return jsonify({'error': '未登录'}), 401
         return f(user, *args, **kwargs)
-    wrapper.__name__ = f.__name__
     return wrapper
 
 
 def require_role(role):
     """角色权限装饰器"""
     def decorator(f):
+        @wraps(f)
         def wrapper(*args, **kwargs):
             user = get_current_user()
             if not user:
@@ -60,7 +63,6 @@ def require_role(role):
             if user.role != role:
                 return jsonify({'error': '权限不足'}), 403
             return f(user, *args, **kwargs)
-        wrapper.__name__ = f.__name__
         return wrapper
     return decorator
 
@@ -79,21 +81,21 @@ def register():
     email = data.get('email')
     password = data.get('password')
     role = data.get('role', 'student')
-    
+
     if not username or not email or not password:
         return jsonify({'error': '缺少必要字段'}), 400
-    
+
     if User.query.filter_by(username=username).first():
         return jsonify({'error': '用户名已存在'}), 400
-    
+
     if User.query.filter_by(email=email).first():
         return jsonify({'error': '邮箱已存在'}), 400
-    
+
     user = User(username=username, email=email, role=role)
     user.set_password(password)
     db.session.add(user)
     db.session.commit()
-    
+
     return jsonify({'message': '注册成功', 'user': user.to_dict()}), 201
 
 
@@ -103,23 +105,63 @@ def login():
     data = request.json
     username = data.get('username')
     password = data.get('password')
-    
+
     if not username or not password:
         return jsonify({'error': '缺少用户名或密码'}), 400
-    
+
     user = User.query.filter_by(username=username).first()
-    
+
     if not user or not user.check_password(password):
         return jsonify({'error': '用户名或密码错误'}), 401
-    
+
     if not user.is_active:
         return jsonify({'error': '账户已被禁用'}), 403
-    
+
     return jsonify({
         'message': '登录成功',
         'user': user.to_dict(),
         'user_id': user.id  # 简化版，生产环境应返回JWT token
     }), 200
+
+
+@app.route('/api/users/me', methods=['GET'])
+@require_auth
+def get_my_profile(user):
+    """获取当前登录用户信息"""
+    return jsonify({'user': user.to_dict()}), 200
+
+
+@app.route('/api/auth/logout', methods=['POST'])
+@require_auth
+def logout(user):
+    """退出登录（无状态鉴权：由客户端清除 user_id 实现）"""
+    return jsonify({'message': '退出登录成功'}), 200
+
+
+@app.route('/api/users/me', methods=['DELETE'])
+@require_auth
+def delete_my_account(user):
+    """注销账号（删除当前用户）"""
+    try:
+        # 先删订阅，避免外键约束问题
+        Subscription.query.filter_by(user_id=user.id).delete(synchronize_session=False)
+
+        # 删除评论（评论 author_id 外键不可为空）
+        Comment.query.filter_by(author_id=user.id).delete(synchronize_session=False)
+
+        # 删除资源标签关联、评论，再删除资源（资源 uploader_id 外键不可为空）
+        resources = Resource.query.filter_by(uploader_id=user.id).all()
+        for r in resources:
+            ResourceTag.query.filter_by(resource_id=r.id).delete(synchronize_session=False)
+            Comment.query.filter_by(resource_id=r.id).delete(synchronize_session=False)
+            db.session.delete(r)
+
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'message': '账号已注销'}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({'error': '注销失败', 'detail': str(e)}), 500
 
 
 @app.route('/api/resources', methods=['GET'])
@@ -129,11 +171,6 @@ def get_resources():
     keyword = request.args.get('keyword') or request.args.get('search')  # 支持两种参数名
     tag_id_str = request.args.get('tag_id') or request.args.get('tag')
 
-<<<<<<< Updated upstream
-    print(f"收到资源查询请求: status={status_filter}, keyword={keyword}, tag_id={tag_id_str}")
-
-    # 基础查询
-=======
     # 分页参数（page 从 1 开始）
     try:
         page = int(request.args.get('page', 1))
@@ -149,7 +186,6 @@ def get_resources():
 
     sort = (request.args.get('sort') or 'new').strip().lower()
 
->>>>>>> Stashed changes
     resources_query = Resource.query
 
     # 根据角色 + status 参数决定可见范围
@@ -166,17 +202,11 @@ def get_resources():
         print("进入普通用户分支，只看 approved")
         resources_query = resources_query.filter(Resource.status == 'approved')
 
-<<<<<<< Updated upstream
     # 关键词搜索（模糊匹配标题或描述）
-    if keyword and keyword.strip():
-        keyword = keyword.strip()
-        print(f"关键词搜索: {keyword}")
-=======
-    # 搜索关键词
     keyword_clean = None
     if keyword and keyword.strip():
         keyword_clean = keyword.strip()
->>>>>>> Stashed changes
+        print(f"关键词搜索: {keyword_clean}")
         resources_query = resources_query.filter(
             or_(
                 Resource.title.ilike(f'%{keyword_clean}%'),
@@ -190,51 +220,69 @@ def get_resources():
         print(f"标签过滤: tag_id={tag_id}")
         resources_query = resources_query.join(ResourceTag).filter(ResourceTag.tag_id == tag_id)
 
-<<<<<<< Updated upstream
-    # 排序（最新在上） + 执行查询
-    resources = resources_query.order_by(Resource.created_at.desc()).all()
-
-    print(f"最终查到资源数量: {len(resources)}")
-    if resources:
-        print("示例第一条: ", resources[0].title, resources[0].status)
-    else:
-        print("返回空数组！")
-
-    return jsonify({'resources': [r.to_dict() for r in resources]}), 200
-=======
     # 总数
     total = resources_query.distinct(Resource.id).count()
 
     # 排序
-    if sort == 'smart':
-        # 时间 + 浏览量 + 相关性（学生写法：先查出来再打分排序）
-        # 注意：数据量很大时会慢，但目前够用
+    if sort == 'relevance':
+        # 相关性排序：标题/描述包含关键字的排前面（学生写法：查出来再排序）
+        tmp = resources_query.order_by(Resource.created_at.desc()).all()
+
+        def rel_score(r):
+            s = 0
+            if keyword_clean:
+                try:
+                    if r.title and keyword_clean.lower() in r.title.lower():
+                        s += 100
+                except Exception:
+                    pass
+                try:
+                    if r.description and keyword_clean.lower() in r.description.lower():
+                        s += 50
+                except Exception:
+                    pass
+            return s
+
+        tmp.sort(key=lambda x: rel_score(x), reverse=True)
+        total = len(tmp)
+        start = (page - 1) * page_size
+        end = start + page_size
+        resources = tmp[start:end]
+
+        return jsonify({
+            'resources': [r.to_dict() for r in resources],
+            'page': page,
+            'page_size': page_size,
+            'total': total
+        }), 200
+
+    elif sort == 'views':
+        resources_query = resources_query.order_by(Resource.view_count.desc(), Resource.created_at.desc())
+
+    elif sort == 'smart':
+        # 保留 smart：时间 + 浏览量 + 相关性（学生写法：先查出来再打分排序）
         tmp = resources_query.order_by(Resource.created_at.desc()).all()
 
         def calc_score(r):
             s = 0
 
-            # 相关性：标题命中权重大一些
             if keyword_clean:
                 try:
                     if r.title and keyword_clean.lower() in r.title.lower():
                         s += 60
                 except Exception:
                     pass
-
                 try:
                     if r.description and keyword_clean.lower() in r.description.lower():
                         s += 30
                 except Exception:
                     pass
 
-            # 浏览量：直接加一点（不做 log）
             try:
                 s += int(r.view_count or 0) * 1
             except Exception:
                 pass
 
-            # 时间：新一点加一点（简单按 created_at 的 timestamp 加权）
             try:
                 s += int(r.created_at.timestamp()) // 100000
             except Exception:
@@ -258,6 +306,7 @@ def get_resources():
 
     elif sort == 'hot':
         resources_query = resources_query.order_by(Resource.view_count.desc(), Resource.created_at.desc())
+
     else:
         # new
         resources_query = resources_query.order_by(Resource.created_at.desc())
@@ -270,7 +319,7 @@ def get_resources():
         'page_size': page_size,
         'total': total
     }), 200
->>>>>>> Stashed changes
+
 
 @app.route('/api/resources', methods=['POST'])
 @require_auth
@@ -304,13 +353,6 @@ def upload_resource(user):
     secure_name = secure_filename(original_filename)
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     unique_filename = f"{timestamp}_{secure_name}"
-
-    # 2. 可选：如果想按日期分文件夹（推荐，避免文件名冲突太多）
-    # date_dir = datetime.now().strftime('%Y/%m')
-    # upload_subdir = os.path.join(app.config['UPLOAD_FOLDER'], date_dir)
-    # os.makedirs(upload_subdir, exist_ok=True)
-    # file_path_for_db = os.path.join(date_dir, unique_filename)
-    # full_save_path = os.path.join(app.config['UPLOAD_FOLDER'], file_path_for_db)
 
     # 目前使用平铺方式（最简单）
     file_path_for_db = unique_filename                  # ← 数据库只存这个！
@@ -384,8 +426,10 @@ def download_resource(user, resource_id):
     print("资源状态:", resource.status)
 
     if resource.status != 'approved':
-        print("拒绝 - 未通过审核")
-        return jsonify({'error': '资源未审核通过'}), 403
+        # 审核员允许预览/下载待审核资源
+        if not (user and user.role == ROLE_MODERATOR and resource.status == 'pending'):
+            print("拒绝 - 未通过审核")
+            return jsonify({'error': '资源未审核通过'}), 403
 
     # 使用相对路径拼接（现在数据库已经是相对路径了）
     file_path = os.path.join(app.config['UPLOAD_FOLDER'], resource.file_path)
@@ -423,6 +467,7 @@ def download_resource(user, resource_id):
             'detail': str(e)
         }), 500
 
+
 @app.route('/api/resources/<int:resource_id>/review', methods=['POST'])
 @require_role(ROLE_MODERATOR)
 def review_resource(moderator, resource_id):
@@ -430,15 +475,15 @@ def review_resource(moderator, resource_id):
     resource = Resource.query.get_or_404(resource_id)
     data = request.json
     status = data.get('status')  # approved or rejected
-    
+
     if status not in ['approved', 'rejected']:
         return jsonify({'error': '无效的状态'}), 400
-    
+
     resource.status = status
     resource.reviewer_id = moderator.id
     resource.reviewed_at = datetime.utcnow()
     db.session.commit()
-    
+
     return jsonify({'message': '审核完成', 'resource': resource.to_dict()}), 200
 
 
@@ -447,7 +492,7 @@ def get_comments(resource_id):
     """获取资源评论"""
     resource = Resource.query.get_or_404(resource_id)
     comments = Comment.query.filter_by(resource_id=resource_id, parent_id=None).all()
-    
+
     return jsonify({'comments': [c.to_dict() for c in comments]}), 200
 
 
@@ -456,24 +501,128 @@ def get_comments(resource_id):
 def add_comment(user, resource_id):
     """添加评论"""
     resource = Resource.query.get_or_404(resource_id)
-    data = request.json
-    content = data.get('content')
+    data = request.json or {}
+    content = (data.get('content') or '').strip()
     parent_id = data.get('parent_id')
-    
+
     if not content:
         return jsonify({'error': '评论内容不能为空'}), 400
-    
+
+    parent_comment = None
+    if parent_id is not None:
+        try:
+            parent_id_int = int(parent_id)
+        except Exception:
+            return jsonify({'error': 'parent_id 无效'}), 400
+
+        parent_comment = Comment.query.get_or_404(parent_id_int)
+        if parent_comment.resource_id != resource_id:
+            return jsonify({'error': 'parent_id 不属于该资源'}), 400
+
     comment = Comment(
         resource_id=resource_id,
         author_id=user.id,
         content=content,
-        parent_id=parent_id
+        parent_id=parent_comment.id if parent_comment else None
     )
-    
+
     db.session.add(comment)
+    db.session.flush()  # 获取 comment.id
+
+    def preview(text: str) -> str:
+        t = (text or '').strip().replace('\n', ' ')
+        return t[:50]
+
+    # 生成通知
+    notify_user_ids = set()
+
+    if parent_comment is None:
+        # 新评论：通知资源上传者
+        if resource.uploader_id and resource.uploader_id != user.id:
+            notify_user_ids.add(resource.uploader_id)
+        n_type = 'comment'
+    else:
+        # 新回复：通知被回复的评论作者
+        if parent_comment.author_id and parent_comment.author_id != user.id:
+            notify_user_ids.add(parent_comment.author_id)
+        n_type = 'reply'
+
+    for uid in notify_user_ids:
+        notif = Notification(
+            user_id=uid,
+            type=n_type,
+            resource_id=resource_id,
+            comment_id=comment.id,
+            from_user_id=user.id,
+            from_username=user.username,
+            content_preview=preview(content),
+            is_read=False
+        )
+        db.session.add(notif)
+
     db.session.commit()
-    
+
     return jsonify({'message': '评论成功', 'comment': comment.to_dict()}), 201
+
+
+@app.route('/api/notifications/unread_count', methods=['GET'])
+@require_auth
+def get_unread_notification_count(user):
+    count = Notification.query.filter_by(user_id=user.id, is_read=False).count()
+    return jsonify({'unread_count': count}), 200
+
+
+@app.route('/api/notifications', methods=['GET'])
+@require_auth
+def get_notifications(user):
+    unread_only = request.args.get('unread')
+
+    try:
+        page = int(request.args.get('page', 1))
+    except Exception:
+        page = 1
+
+    try:
+        page_size = int(request.args.get('page_size', 20))
+    except Exception:
+        page_size = 20
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    q = Notification.query.filter(Notification.user_id == user.id)
+    if unread_only in ['1', 'true', 'True']:
+        q = q.filter(Notification.is_read.is_(False))
+
+    total = q.count()
+    items = q.order_by(Notification.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    return jsonify({
+        'notifications': [n.to_dict() for n in items],
+        'page': page,
+        'page_size': page_size,
+        'total': total
+    }), 200
+
+
+@app.route('/api/notifications/<int:notif_id>/read', methods=['POST'])
+@require_auth
+def mark_notification_read(user, notif_id):
+    notif = Notification.query.get_or_404(notif_id)
+    if notif.user_id != user.id:
+        return jsonify({'error': '权限不足'}), 403
+
+    notif.is_read = True
+    db.session.commit()
+    return jsonify({'message': 'ok'}), 200
+
+
+@app.route('/api/notifications/read_all', methods=['POST'])
+@require_auth
+def mark_all_notifications_read(user):
+    Notification.query.filter_by(user_id=user.id, is_read=False).update({'is_read': True})
+    db.session.commit()
+    return jsonify({'message': 'ok'}), 200
 
 
 @app.route('/api/resources/<int:resource_id>/ai-ask', methods=['POST'])
@@ -483,16 +632,16 @@ def ai_ask(user, resource_id):
     resource = Resource.query.get_or_404(resource_id)
     data = request.json
     question = data.get('question')
-    
+
     if not question:
         return jsonify({'error': '问题不能为空'}), 400
-    
+
     # 构建上下文
     context = f"资源标题: {resource.title}\n资源描述: {resource.description or '无'}"
-    
+
     # 调用AI服务
     ai_answer = call_ai_service(question, context)
-    
+
     if ai_answer:
         # 保存AI回答为评论
         ai_comment = Comment(
@@ -503,7 +652,7 @@ def ai_ask(user, resource_id):
         )
         db.session.add(ai_comment)
         db.session.commit()
-        
+
         return jsonify({'answer': ai_answer, 'comment': ai_comment.to_dict()}), 200
     else:
         return jsonify({'error': 'AI服务暂时不可用'}), 503
@@ -532,21 +681,21 @@ def subscribe_tag(user):
     """订阅标签"""
     data = request.json
     tag_id = data.get('tag_id')
-    
+
     if not tag_id:
         return jsonify({'error': '缺少标签ID'}), 400
-    
+
     tag = Tag.query.get_or_404(tag_id)
-    
+
     # 检查是否已订阅
     existing = Subscription.query.filter_by(user_id=user.id, tag_id=tag_id).first()
     if existing:
         return jsonify({'error': '已订阅该标签'}), 400
-    
+
     subscription = Subscription(user_id=user.id, tag_id=tag_id)
     db.session.add(subscription)
     db.session.commit()
-    
+
     return jsonify({'message': '订阅成功'}), 201
 
 
@@ -557,10 +706,10 @@ def unsubscribe_tag(user, tag_id):
     subscription = Subscription.query.filter_by(user_id=user.id, tag_id=tag_id).first()
     if not subscription:
         return jsonify({'error': '未订阅该标签'}), 404
-    
+
     db.session.delete(subscription)
     db.session.commit()
-    
+
     return jsonify({'message': '取消订阅成功'}), 200
 
 
@@ -611,6 +760,107 @@ def get_subscribed_resources(user):
         'total': total
     }), 200
 
+
+@app.route('/api/reports', methods=['POST'])
+@require_auth
+def create_report(user):
+    data = request.json or {}
+    resource_id = data.get('resource_id')
+    reason = (data.get('reason') or '').strip()
+
+    if not resource_id or not reason:
+        return jsonify({'error': '缺少必要参数'}), 400
+
+    resource = Resource.query.get_or_404(int(resource_id))
+
+    existing = Report.query.filter_by(resource_id=resource.id, reporter_id=user.id, status='pending').first()
+    if existing:
+        return jsonify({'error': '您已经举报过该资源'}), 400
+
+    report = Report(resource_id=resource.id, reporter_id=user.id, reason=reason, status='pending')
+    db.session.add(report)
+    db.session.commit()
+
+    return jsonify({'message': '举报已提交', 'report': report.to_dict()}), 201
+
+
+@app.route('/api/reports', methods=['GET'])
+@require_role(ROLE_MODERATOR)
+def get_reports(moderator):
+    status = (request.args.get('status') or 'pending').strip().lower()
+
+    try:
+        page = int(request.args.get('page', 1))
+    except Exception:
+        page = 1
+
+    try:
+        page_size = int(request.args.get('page_size', 20))
+    except Exception:
+        page_size = 20
+
+    page = max(page, 1)
+    page_size = max(1, min(page_size, 100))
+
+    q = Report.query
+    if status != 'all':
+        q = q.filter(Report.status == status)
+
+    total = q.count()
+    items = q.order_by(Report.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+
+    return jsonify({
+        'reports': [r.to_dict() for r in items],
+        'page': page,
+        'page_size': page_size,
+        'total': total
+    }), 200
+
+
+@app.route('/api/reports/<int:report_id>/resolve', methods=['POST'])
+@require_role(ROLE_MODERATOR)
+def resolve_report(moderator, report_id):
+    report = Report.query.get_or_404(report_id)
+
+    if report.status != 'pending':
+        return jsonify({'error': '该举报已处理'}), 400
+
+    data = request.json or {}
+    action = (data.get('action') or '').strip().lower()  # delete / reject
+
+    if action not in ['delete', 'reject']:
+        return jsonify({'error': '无效的操作'}), 400
+
+    report.resolver_id = moderator.id
+    report.resolved_at = datetime.utcnow()
+
+    if action == 'delete':
+        report.status = 'resolved'
+        resource = Resource.query.get(report.resource_id)
+        if resource:
+            # PostgreSQL 最稳妥：先删子表再删父表（避免外键未设置 ON DELETE CASCADE 时失败）
+            ResourceTag.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+            Comment.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+            Report.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+
+            # 删除文件（尽力而为）
+            try:
+                file_path = os.path.join(app.config['UPLOAD_FOLDER'], resource.file_path)
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+            except Exception as e:
+                app.logger.error(f"删除资源文件失败: {e}")
+
+            db.session.delete(resource)
+
+        db.session.commit()
+        return jsonify({'message': '操作成功，资源已删除'}), 200
+    else:
+        report.status = 'rejected'
+        db.session.commit()
+        return jsonify({'message': '操作成功', 'report': report.to_dict()}), 200
+
+
 @app.route('/api/resources/<int:resource_id>', methods=['GET'])
 def get_resource(resource_id):
     resource = Resource.query.get_or_404(resource_id)
@@ -619,6 +869,34 @@ def get_resource(resource_id):
     db.session.commit()
 
     return jsonify(resource.to_dict()), 200
+
+
+@app.route('/api/resources/<int:resource_id>', methods=['DELETE'])
+@require_auth
+def delete_resource(user, resource_id):
+    resource = Resource.query.get_or_404(resource_id)
+
+    if user.role != ROLE_MODERATOR and resource.uploader_id != user.id:
+        return jsonify({'error': '权限不足'}), 403
+
+    try:
+        ResourceTag.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+        Comment.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+        Report.query.filter_by(resource_id=resource.id).delete(synchronize_session=False)
+
+        try:
+            file_path = os.path.join(app.config['UPLOAD_FOLDER'], resource.file_path)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
+
+        db.session.delete(resource)
+        db.session.commit()
+        return jsonify({'message': '资源已删除'}), 200
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        return jsonify({'error': '删除资源失败', 'detail': str(e)}), 500
 
 
 if __name__ == '__main__':
