@@ -21,6 +21,7 @@ set(SOURCES
     resourcedetailwindow.cpp
     reportmanagementwindow.cpp
     notificationwindow.cpp
+    myresourceswindow.cpp
 )
 
 set(HEADERS
@@ -30,6 +31,7 @@ set(HEADERS
     resourcedetailwindow.h
     reportmanagementwindow.h
     notificationwindow.h
+    myresourceswindow.h
 )
 
 # 创建可执行文件

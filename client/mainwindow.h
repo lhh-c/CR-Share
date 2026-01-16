@@ -48,6 +48,7 @@ private slots:
     void onLogoutBtnClicked();
     void onDeleteAccountBtnClicked();
     void onNotificationsClicked();
+    void onMyResourcesClicked();
 
 private:
     void setupUI();
@@ -72,6 +73,7 @@ private:
     QPushButton *m_logoutBtn;
     QPushButton *m_deleteAccountBtn;
     QPushButton *m_notificationsBtn;
+    QPushButton *m_myResourcesBtn;
 
     // 视图容器
     QGroupBox *m_recommendationGroup;

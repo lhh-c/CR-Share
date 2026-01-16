@@ -3,6 +3,7 @@
 #include "resourcedetailwindow.h"
 #include "reportmanagementwindow.h"
 #include "notificationwindow.h"
+#include "myresourceswindow.h"
 #include <QUrl>
 #include <QNetworkRequest>
 #include <QHttpMultiPart>
@@ -222,7 +223,9 @@ void MainWindow::setupUI()
     m_logoutBtn = new QPushButton("退出登录");
     m_deleteAccountBtn = new QPushButton("注销账号");
     m_notificationsBtn = new QPushButton("通知");
+    m_myResourcesBtn = new QPushButton("我上传的资源");
     accountBtnLayout->addWidget(m_notificationsBtn);
+    accountBtnLayout->addWidget(m_myResourcesBtn);
     accountBtnLayout->addWidget(m_logoutBtn);
     accountBtnLayout->addWidget(m_deleteAccountBtn);
     accountBtnLayout->addStretch();
@@ -240,6 +243,7 @@ void MainWindow::setupUI()
     recLayout->addLayout(functionLayout);
 
     connect(m_notificationsBtn, &QPushButton::clicked, this, &MainWindow::onNotificationsClicked);
+    connect(m_myResourcesBtn, &QPushButton::clicked, this, &MainWindow::onMyResourcesClicked);
     connect(m_logoutBtn, &QPushButton::clicked, this, &MainWindow::onLogoutBtnClicked);
     connect(m_deleteAccountBtn, &QPushButton::clicked, this, &MainWindow::onDeleteAccountBtnClicked);
 
@@ -610,6 +614,21 @@ void MainWindow::onNotificationsClicked()
     NotificationWindow *w = new NotificationWindow(m_userId, this);
     w->setAttribute(Qt::WA_DeleteOnClose);
     connect(w, &NotificationWindow::openResourceRequested, this, [this](int resourceId) {
+        if (resourceId <= 0) return;
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, m_userRole, "user", this);
+        connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
+            loadResources();
+        });
+        detailWindow->show();
+    });
+    w->show();
+}
+
+void MainWindow::onMyResourcesClicked()
+{
+    MyResourcesWindow *w = new MyResourcesWindow(m_userId, m_userRole, this);
+    w->setAttribute(Qt::WA_DeleteOnClose);
+    connect(w, &MyResourcesWindow::openResourceRequested, this, [this](int resourceId) {
         if (resourceId <= 0) return;
         ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, m_userRole, "user", this);
         connect(detailWindow, &ResourceDetailWindow::resourceDeleted, this, [this](int) {
