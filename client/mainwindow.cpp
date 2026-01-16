@@ -80,6 +80,32 @@ void MainWindow::setupUI()
     m_recommendedResourcesList = new QListWidget();
     mainLayout->addWidget(m_recommendedResourcesList);
 
+    QHBoxLayout *mainPagerLayout = new QHBoxLayout();
+    m_mainPrevBtn = new QPushButton("上一页");
+    m_mainNextBtn = new QPushButton("下一页");
+    m_mainPageLabel = new QLabel();
+    m_mainPageLabel->setAlignment(Qt::AlignCenter);
+    mainPagerLayout->addWidget(m_mainPrevBtn);
+    mainPagerLayout->addWidget(m_mainPageLabel, 1);
+    mainPagerLayout->addWidget(m_mainNextBtn);
+    mainLayout->addLayout(mainPagerLayout);
+
+    connect(m_mainPrevBtn, &QPushButton::clicked, this, [this]() {
+        if (m_mainPage > 1) {
+            m_mainPage -= 1;
+            loadResources();
+        }
+    });
+
+    connect(m_mainNextBtn, &QPushButton::clicked, this, [this]() {
+        int totalPages = (m_mainTotal + m_mainPageSize - 1) / m_mainPageSize;
+        if (totalPages <= 0) totalPages = 1;
+        if (m_mainPage < totalPages) {
+            m_mainPage += 1;
+            loadResources();
+        }
+    });
+
     // 功能按钮区域
     QHBoxLayout *functionLayout = new QHBoxLayout();
     m_uploadBtn = new QPushButton("上传资源");
@@ -355,30 +381,37 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
             qDebug() << "m_pendingResourcesList nullptr";
         }
     }
-    else if (urlStr.contains("/api/resources") && !urlStr.contains("/api/resources/")) {
+    else if (reply->property("requestType").toString() == "main_resources") {
+        m_mainPage = json["page"].toInt(1);
+        m_mainPageSize = json["page_size"].toInt(20);
+        m_mainTotal = json["total"].toInt(0);
         QJsonArray resources = json["resources"].toArray();
-        qDebug() << "resources 数组大小:" << resources.size();
-        qDebug() << "处理推荐资源列表";
+        
+        qDebug() << "主界面推荐资源加载完成，数量:" << resources.size() << "总数:" << m_mainTotal;
 
         m_recommendedResourcesList->clear();
-        int added = 0;
         for (const QJsonValue &val : resources) {
             QJsonObject res = val.toObject();
             QString title = res["title"].toString();
             int id = res["id"].toInt();
-            qDebug() << "添加资源：" << title << "(ID:" << id << ")";
             QListWidgetItem *item = new QListWidgetItem(title);
             item->setData(Qt::UserRole, id);
             m_recommendedResourcesList->addItem(item);
-            added++;
         }
-        qDebug() << "推荐资源列表添加完成，共添加" << added << "项";
-        qDebug() << "当前列表项数：" << m_recommendedResourcesList->count();
+        
+        if (resources.isEmpty()) {
+            QListWidgetItem *emptyItem = new QListWidgetItem("暂无推荐资源");
+            emptyItem->setFlags(emptyItem->flags() & ~Qt::ItemIsSelectable);
+            m_recommendedResourcesList->addItem(emptyItem);
+        }
 
-        m_recommendedResourcesList->update();
-        m_recommendedResourcesList->repaint();
-        m_recommendedResourcesList->scrollToTop();
-        QApplication::processEvents();
+        // 更新分页UI
+        int totalPages = (m_mainTotal + m_mainPageSize - 1) / m_mainPageSize;
+        if (totalPages <= 0) totalPages = 1;
+
+        m_mainPageLabel->setText(QString("第 %1/%2 页").arg(m_mainPage).arg(totalPages));
+        m_mainPrevBtn->setEnabled(m_mainPage > 1);
+        m_mainNextBtn->setEnabled(m_mainPage < totalPages);
     }
     else if (statusCode == 201 && urlStr.contains("/api/resources") && !urlStr.contains("/api/resources/")) {
         showSuccess("资源上传成功！");
@@ -399,6 +432,7 @@ void MainWindow::onSearchClicked()
 
 void MainWindow::onRefreshClicked()
 {
+    m_mainPage = 1;
     loadResources();
 }
 
@@ -708,8 +742,14 @@ void MainWindow::onReviewResource()
 
 void MainWindow::loadResources()
 {
-    QString url = "http://localhost:5000/api/resources?status=approved&limit=20";
-    makeRequest(url, "GET");
+    QString url = QString("http://localhost:5000/api/resources?status=approved&page=%1&page_size=%2&sort=new")
+                  .arg(m_mainPage).arg(m_mainPageSize);
+
+    QNetworkRequest request{QUrl(url)};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+
+    QNetworkReply *reply = m_networkManager->get(request);
+    reply->setProperty("requestType", "main_resources");
 }
 
 void MainWindow::loadTags()

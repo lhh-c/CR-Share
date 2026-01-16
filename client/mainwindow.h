@@ -88,6 +88,14 @@ private:
     int m_subPage = 1;
     int m_subPageSize = 10;
     int m_subTotal = 0;
+
+    // 主界面推荐资源分页
+    QPushButton *m_mainPrevBtn;
+    QPushButton *m_mainNextBtn;
+    QLabel *m_mainPageLabel;
+    int m_mainPage = 1;
+    int m_mainPageSize = 20;
+    int m_mainTotal = 0;
     
     // 审核对话框相关（保留用于审核功能）
     QDialog *m_reviewDialog;

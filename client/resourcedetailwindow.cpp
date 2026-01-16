@@ -136,6 +136,8 @@ void ResourceDetailWindow::onPreviewPdfClicked()
         QPdfView *view = new QPdfView();
         view->setWindowTitle("PDF预览");
         view->resize(900, 700);
+        view->setPageMode(QPdfView::PageMode::MultiPage);
+        view->setZoomMode(QPdfView::ZoomMode::FitToWidth);
         view->setDocument(doc);
         view->show();
         return;
@@ -247,6 +249,8 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                 QPdfView *view = new QPdfView();
                 view->setWindowTitle("PDF预览");
                 view->resize(900, 700);
+                view->setPageMode(QPdfView::PageMode::MultiPage);
+                view->setZoomMode(QPdfView::ZoomMode::FitToWidth);
                 view->setDocument(doc);
                 view->show();
             } else {
