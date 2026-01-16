@@ -2,6 +2,7 @@
 #include "resourcedetailwindow.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
+#include <QPushButton>
 #include <QMessageBox>
 #include <QUrl>
 #include <QNetworkRequest>
@@ -34,16 +35,57 @@ void SearchResultWindow::setupUI()
 
     QVBoxLayout *layout = new QVBoxLayout(centralWidget);
 
+    // 状态显示（关键词 + 结果数）
     m_statusLabel = new QLabel("正在搜索...");
     m_statusLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #333;");
     layout->addWidget(m_statusLabel);
 
+    // 结果列表
     m_resultList = new QListWidget();
     m_resultList->setStyleSheet("QListWidget { font-size: 14px; }");
     layout->addWidget(m_resultList);
 
+    QHBoxLayout *pagerLayout = new QHBoxLayout();
+    m_prevButton = new QPushButton("上一页");
+    m_nextButton = new QPushButton("下一页");
+    m_pageLabel = new QLabel();
+    m_pageLabel->setAlignment(Qt::AlignCenter);
+
+    pagerLayout->addWidget(m_prevButton);
+    pagerLayout->addWidget(m_pageLabel, 1);
+    pagerLayout->addWidget(m_nextButton);
+
+    layout->addLayout(pagerLayout);
+
     connect(m_resultList, &QListWidget::itemClicked,
             this, &SearchResultWindow::onResourceSelected);
+    connect(m_prevButton, &QPushButton::clicked, this, [this]() {
+        if (m_page > 1) {
+            m_page -= 1;
+            loadSearchResults();
+        }
+    });
+    connect(m_nextButton, &QPushButton::clicked, this, [this]() {
+        int totalPages = (m_total + m_pageSize - 1) / m_pageSize;
+        if (totalPages <= 0) totalPages = 1;
+        if (m_page < totalPages) {
+            m_page += 1;
+            loadSearchResults();
+        }
+    });
+
+    int totalPages = (m_total + m_pageSize - 1) / m_pageSize;
+    if (totalPages <= 0) totalPages = 1;
+
+    m_pageLabel->setText(QString("第 %1/%2 页").arg(m_page).arg(totalPages));
+    m_prevButton->setEnabled(m_page > 1);
+    m_nextButton->setEnabled(m_page < totalPages);
+
+    m_statusLabel->setText(QString("搜索中... (关键词: %1, 标签: %2)\n页码: %3/%4")
+                               .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
+                               .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter)
+                               .arg(m_page)
+                               .arg(totalPages));
 }
 
 void SearchResultWindow::setupNetworkManager()
@@ -57,17 +99,23 @@ void SearchResultWindow::loadSearchResults()
 {
     QUrl url("http://localhost:5000/api/resources");
     QUrlQuery query;
-    query.addQueryItem("status", "approved");
+    query.addQueryItem("status", "approved");  // 默认只搜已通过
 
     if (!m_searchKeyword.isEmpty()) {
-        query.addQueryItem("keyword", m_searchKeyword);
+        query.addQueryItem("keyword", m_searchKeyword);  // 建议服务端用 keyword
     }
 
     if (!m_tagFilter.isEmpty() && m_tagFilter != "") {
-        query.addQueryItem("tag_id", m_tagFilter);
+        query.addQueryItem("tag_id", m_tagFilter);  // 服务端用 tag_id
     }
 
-    query.addQueryItem("limit", "50");
+// <<<<<<< Updated upstream
+    query.addQueryItem("limit", "50");  // 限制结果数量，避免太多
+// =======
+//     query.addQueryItem("page", QString::number(m_page));
+//     query.addQueryItem("page_size", QString::number(m_pageSize));
+//     query.addQueryItem("sort", "smart");
+// >>>>>>> Stashed changes
 
     url.setQuery(query);
 
@@ -75,12 +123,22 @@ void SearchResultWindow::loadSearchResults()
     request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
 
     QNetworkReply *reply = m_networkManager->get(request);
-    reply->setProperty("requestType", "searchResults");
+    reply->setProperty("requestType", "searchResults");  // 关键标记，便于区分
 
-    m_statusLabel->setText(QString("搜索中... (关键词: %1, 标签: %2)")
+    qDebug() << "发起搜索请求:" << url.toString();
+
+    int totalPages = (m_total + m_pageSize - 1) / m_pageSize;
+    if (totalPages <= 0) totalPages = 1;
+    m_pageLabel->setText(QString("第 %1/%2 页").arg(m_page).arg(totalPages));
+    m_prevButton->setEnabled(m_page > 1);
+    m_nextButton->setEnabled(m_page < totalPages);
+    m_statusLabel->setText(QString("搜索中... (关键词: %1, 标签: %2)\n页码: %3/%4")
                                .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
-                               .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
+                               .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter)
+                               .arg(m_page)
+                               .arg(totalPages));
 }
+
 
 void SearchResultWindow::onResourceSelected(QListWidgetItem *item)
 {
@@ -97,11 +155,13 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
 {
     if (reply->property("requestType").toString() != "searchResults") {
         reply->deleteLater();
-        return;
+        return;  // 只处理搜索请求
     }
 
     if (reply->error() != QNetworkReply::NoError) {
         m_statusLabel->setText("网络错误: " + reply->errorString());
+        m_prevButton->setEnabled(false);
+        m_nextButton->setEnabled(false);
         QMessageBox::warning(this, "错误", reply->errorString());
         reply->deleteLater();
         return;
@@ -110,6 +170,8 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (statusCode < 200 || statusCode >= 300) {
         m_statusLabel->setText("服务器错误 " + QString::number(statusCode));
+        m_prevButton->setEnabled(false);
+        m_nextButton->setEnabled(false);
         reply->deleteLater();
         return;
     }
@@ -124,6 +186,10 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
     }
 
     QJsonObject json = doc.object();
+    m_page = json["page"].toInt(1);
+    m_pageSize = json["page_size"].toInt(20);
+    m_total = json["total"].toInt(0);
+
     QJsonArray resources = json["resources"].toArray();
 
     m_resultList->clear();
@@ -132,10 +198,12 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
         m_statusLabel->setText(QString("未找到匹配资源\n关键词: %1 | 标签: %2")
                                    .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
                                    .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
-        m_resultList->addItem("没有匹配的结果，试试其他关键词或标签吧~");
+        QListWidgetItem* emptyItem = new QListWidgetItem("没有匹配的结果，试试其他关键词或标签吧~");
+        emptyItem->setFlags(emptyItem->flags() & ~Qt::ItemIsSelectable);
+        m_resultList->addItem(emptyItem);
     } else {
-        m_statusLabel->setText(QString("找到 %1 个匹配资源\n关键词: %2 | 标签: %3")
-                                   .arg(resources.size())
+        m_statusLabel->setText(QString("共找到 %1 个匹配资源\n关键词: %2 | 标签: %3")
+                                   .arg(m_total)
                                    .arg(m_searchKeyword.isEmpty() ? "无" : m_searchKeyword)
                                    .arg(m_tagFilter.isEmpty() ? "无" : m_tagFilter));
 
@@ -143,13 +211,22 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
             QJsonObject res = val.toObject();
             QString title = res["title"].toString();
             int id = res["id"].toInt();
+            int viewCount = res["view_count"].toInt(0);
 
-            QListWidgetItem *item = new QListWidgetItem(title);
+            QString displayText = QString("%1 (浏览: %2)").arg(title).arg(viewCount);
+            QListWidgetItem *item = new QListWidgetItem(displayText);
             item->setData(Qt::UserRole, id);
+            // 可选：加提示
             item->setToolTip(res["description"].toString().left(100) + "...");
             m_resultList->addItem(item);
         }
     }
+
+    int totalPages = (m_total + m_pageSize - 1) / m_pageSize;
+    if (totalPages <= 0) totalPages = 1;
+    m_pageLabel->setText(QString("第 %1/%2 页").arg(m_page).arg(totalPages));
+    m_prevButton->setEnabled(m_page > 1);
+    m_nextButton->setEnabled(m_page < totalPages);
 
     reply->deleteLater();
 }

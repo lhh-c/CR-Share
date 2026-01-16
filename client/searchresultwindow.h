@@ -9,6 +9,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonArray>
+#include <QPushButton>
 
 class SearchResultWindow : public QMainWindow
 {
@@ -28,11 +29,18 @@ private:
     void setupUI();
     void setupNetworkManager();
     void loadSearchResults();
-    void makeRequest(const QString &url, const QString &method = "GET");
+    void makeRequest(const QString &url, const QString &method = "GET");  // 改成 void
 
     QListWidget *m_resultList;
     QLabel *m_statusLabel;
+    QLabel *m_pageLabel;
+    QPushButton *m_prevButton;
+    QPushButton *m_nextButton;
     QNetworkAccessManager *m_networkManager;
+
+    int m_page = 1;
+    int m_pageSize = 20;
+    int m_total = 0;
 
     QString m_searchKeyword;
     QString m_tagFilter;

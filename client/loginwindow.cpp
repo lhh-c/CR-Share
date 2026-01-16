@@ -75,7 +75,7 @@ void LoginWindow::onRegisterClicked()
     QJsonObject data;
     data["username"] = username;
     data["password"] = password;
-    data["email"] = username + "@example.com";
+    data["email"] = username + "@example.com";  // 简化版
     data["role"] = "student";
     
     QNetworkRequest request{QUrl("http://localhost:5000/api/auth/register")};

@@ -34,14 +34,17 @@ void ResourceDetailWindow::setupUI()
     
     QVBoxLayout *layout = new QVBoxLayout(centralWidget);
     
+    // 资源详情
     m_resourceDetails = new QTextEdit();
     m_resourceDetails->setReadOnly(true);
     layout->addWidget(m_resourceDetails);
     
+    // 下载按钮
     m_downloadBtn = new QPushButton("下载资源");
     layout->addWidget(m_downloadBtn);
     connect(m_downloadBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onDownloadClicked);
     
+    // 评论区域
     m_commentGroup = new QGroupBox("评论");
     QVBoxLayout *commentLayout = new QVBoxLayout();
     m_commentsDisplay = new QTextEdit();
@@ -57,6 +60,7 @@ void ResourceDetailWindow::setupUI()
     layout->addWidget(m_commentGroup);
     connect(m_commentSubmitBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onCommentSubmit);
     
+    // AI提问区域
     m_aiGroup = new QGroupBox("AI提问");
     QVBoxLayout *aiLayout = new QVBoxLayout();
     m_aiQuestionEdit = new QLineEdit();
@@ -169,6 +173,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     QString urlStr = reply->property("url").toString();
     QString method = reply->property("method").toString();
     
+    // 处理文件下载
     if (reply->property("requestType").toString() == "download") {
         QByteArray fileData = reply->readAll();
         QString suggestedFileName = QString("resource_%1.pdf").arg(m_resourceId);
@@ -191,6 +196,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         return;
     }
     
+    // 处理评论提交成功
     if (statusCode == 201 && urlStr.contains("/comments")) {
         QMessageBox::information(this, "成功", "评论发表成功！");
         m_commentEdit->clear();
@@ -216,6 +222,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     
     QJsonObject json = doc.object();
     
+    // 处理资源详情
     if (urlStr.contains(QString("/api/resources/%1").arg(m_resourceId)) &&
         !urlStr.contains("/comments") && !urlStr.contains("/ai-ask") && !urlStr.contains("/download")) {
         QStringList tagList;
@@ -235,6 +242,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         m_resourceDetails->setPlainText(details);
     }
     
+    // 处理评论列表
     if (urlStr.contains("/comments") && json.contains("comments")) {
         QJsonArray comments = json["comments"].toArray();
         QString commentsText;
@@ -247,10 +255,11 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                 QString author = c["author"].toString("匿名");
                 QString rawTime = c["created_at"].toString("未知时间");
 
+                // 格式化时间：从 ISO 格式提取年-月-日 时:分:秒
                 QString formattedTime = rawTime;
                 if (rawTime.contains("T")) {
-                    QString datePart = rawTime.split("T").first();
-                    QString timePart = rawTime.split("T").last().left(8);
+                    QString datePart = rawTime.split("T").first();           // 2026-01-13
+                    QString timePart = rawTime.split("T").last().left(8);    // 07:30:53
                     formattedTime = QString("（%1 %2）").arg(datePart).arg(timePart);
                 }
 
@@ -266,6 +275,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
 
         m_commentsDisplay->setPlainText(commentsText);
 
+        // 滚动到底部
         QTimer::singleShot(150, this, [this]() {
             QScrollBar *scroll = m_commentsDisplay->verticalScrollBar();
             if (scroll) {
@@ -277,6 +287,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         });
     }
     
+    // 处理AI回答
     if (urlStr.contains("/ai-ask") && json.contains("answer")) {
         m_aiAnswerDisplay->setPlainText(json["answer"].toString());
         m_aiQuestionEdit->clear();
