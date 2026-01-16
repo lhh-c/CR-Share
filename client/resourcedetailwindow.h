@@ -6,6 +6,8 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QGroupBox>
+#include <QTreeWidget>
+#include <QLabel>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QJsonDocument>
@@ -24,6 +26,7 @@ private slots:
     void onPreviewPdfClicked();
     void onReportClicked();
     void onCommentSubmit();
+    void onCancelReply();
     void onAiAsk();
     void onNetworkReply(QNetworkReply *reply);
 
@@ -46,7 +49,10 @@ private:
     QString m_fileType;
     QString m_lastPdfPath;
     QGroupBox *m_commentGroup;
-    QTextEdit *m_commentsDisplay;
+    QTreeWidget *m_commentsTree;
+    QLabel *m_replyToLabel;
+    QPushButton *m_cancelReplyBtn;
+    int m_replyToCommentId = 0;
     QTextEdit *m_commentEdit;
     QPushButton *m_commentSubmitBtn;
     QGroupBox *m_aiGroup;

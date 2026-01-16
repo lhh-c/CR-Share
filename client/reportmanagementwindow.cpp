@@ -9,6 +9,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QNetworkRequest>
+#include <QDateTime>
 
 ReportManagementWindow::ReportManagementWindow(int userId, QWidget *parent)
     : QDialog(parent)
@@ -20,14 +21,6 @@ ReportManagementWindow::ReportManagementWindow(int userId, QWidget *parent)
     QVBoxLayout *layout = new QVBoxLayout(this);
 
     QHBoxLayout *topLayout = new QHBoxLayout();
-    topLayout->addWidget(new QLabel("状态："));
-
-    m_statusFilter = new QComboBox();
-    m_statusFilter->addItem("待处理", "pending");
-    m_statusFilter->addItem("已处理", "resolved");
-    m_statusFilter->addItem("已驳回", "rejected");
-    m_statusFilter->addItem("全部", "all");
-    topLayout->addWidget(m_statusFilter);
 
     m_refreshBtn = new QPushButton("刷新");
     topLayout->addWidget(m_refreshBtn);
@@ -36,8 +29,8 @@ ReportManagementWindow::ReportManagementWindow(int userId, QWidget *parent)
     layout->addLayout(topLayout);
 
     m_table = new QTableWidget();
-    m_table->setColumnCount(6);
-    m_table->setHorizontalHeaderLabels({"举报ID", "资源ID", "资源标题", "举报人", "原因", "状态"});
+    m_table->setColumnCount(4);
+    m_table->setHorizontalHeaderLabels({"资源标题", "举报人", "原因", "举报时间"});
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -73,10 +66,6 @@ ReportManagementWindow::ReportManagementWindow(int userId, QWidget *parent)
         m_page = 1;
         loadReports();
     });
-    connect(m_statusFilter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        m_page = 1;
-        loadReports();
-    });
     connect(m_prevBtn, &QPushButton::clicked, this, [this]() {
         if (m_page > 1) {
             m_page -= 1;
@@ -101,9 +90,7 @@ ReportManagementWindow::ReportManagementWindow(int userId, QWidget *parent)
 
 void ReportManagementWindow::loadReports()
 {
-    QString status = m_statusFilter->currentData().toString();
-    QString url = QString("http://localhost:5000/api/reports?status=%1&page=%2&page_size=%3")
-                      .arg(status)
+    QString url = QString("http://localhost:5000/api/reports?status=pending&page=%1&page_size=%2")
                       .arg(m_page)
                       .arg(m_pageSize);
 
@@ -124,9 +111,9 @@ void ReportManagementWindow::onSelectionChanged()
     }
 
     const auto &r = m_rows[row];
-    bool pending = (r.status == "pending");
-    m_deleteResourceBtn->setEnabled(pending);
-    m_rejectReportBtn->setEnabled(pending);
+    Q_UNUSED(r);
+    m_deleteResourceBtn->setEnabled(true);
+    m_rejectReportBtn->setEnabled(true);
 }
 
 void ReportManagementWindow::sendResolveRequest(int reportId, const QString &action)
@@ -206,14 +193,20 @@ void ReportManagementWindow::onNetworkReply(QNetworkReply *reply)
             row.createdAt = r["created_at"].toString();
             m_rows.append(row);
 
+            QString createdAtFmt = row.createdAt;
+            if (!row.createdAt.isEmpty()) {
+                QDateTime dt = QDateTime::fromString(row.createdAt, Qt::ISODate);
+                if (dt.isValid()) {
+                    createdAtFmt = dt.toString("yyyy-MM-dd hh:mm:ss");
+                }
+            }
+
             int tr = m_table->rowCount();
             m_table->insertRow(tr);
-            m_table->setItem(tr, 0, new QTableWidgetItem(QString::number(row.id)));
-            m_table->setItem(tr, 1, new QTableWidgetItem(QString::number(row.resourceId)));
-            m_table->setItem(tr, 2, new QTableWidgetItem(row.resourceTitle));
-            m_table->setItem(tr, 3, new QTableWidgetItem(row.reporterName));
-            m_table->setItem(tr, 4, new QTableWidgetItem(row.reason));
-            m_table->setItem(tr, 5, new QTableWidgetItem(row.status));
+            m_table->setItem(tr, 0, new QTableWidgetItem(row.resourceTitle));
+            m_table->setItem(tr, 1, new QTableWidgetItem(row.reporterName));
+            m_table->setItem(tr, 2, new QTableWidgetItem(row.reason));
+            m_table->setItem(tr, 3, new QTableWidgetItem(createdAtFmt));
         }
 
         int totalPages = (m_total + m_pageSize - 1) / m_pageSize;

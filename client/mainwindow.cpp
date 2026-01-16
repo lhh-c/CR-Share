@@ -2,6 +2,7 @@
 #include "searchresultwindow.h"
 #include "resourcedetailwindow.h"
 #include "reportmanagementwindow.h"
+#include "notificationwindow.h"
 #include <QUrl>
 #include <QNetworkRequest>
 #include <QHttpMultiPart>
@@ -220,6 +221,8 @@ void MainWindow::setupUI()
     QHBoxLayout *accountBtnLayout = new QHBoxLayout();
     m_logoutBtn = new QPushButton("退出登录");
     m_deleteAccountBtn = new QPushButton("注销账号");
+    m_notificationsBtn = new QPushButton("通知");
+    accountBtnLayout->addWidget(m_notificationsBtn);
     accountBtnLayout->addWidget(m_logoutBtn);
     accountBtnLayout->addWidget(m_deleteAccountBtn);
     accountBtnLayout->addStretch();
@@ -236,6 +239,7 @@ void MainWindow::setupUI()
     functionLayout->addStretch();
     recLayout->addLayout(functionLayout);
 
+    connect(m_notificationsBtn, &QPushButton::clicked, this, &MainWindow::onNotificationsClicked);
     connect(m_logoutBtn, &QPushButton::clicked, this, &MainWindow::onLogoutBtnClicked);
     connect(m_deleteAccountBtn, &QPushButton::clicked, this, &MainWindow::onDeleteAccountBtnClicked);
 
@@ -596,6 +600,18 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
     }
 
     reply->deleteLater();
+}
+
+void MainWindow::onNotificationsClicked()
+{
+    NotificationWindow *w = new NotificationWindow(m_userId, this);
+    w->setAttribute(Qt::WA_DeleteOnClose);
+    connect(w, &NotificationWindow::openResourceRequested, this, [this](int resourceId) {
+        if (resourceId <= 0) return;
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resourceId, m_userId, this);
+        detailWindow->show();
+    });
+    w->show();
 }
 
 void MainWindow::onLogoutBtnClicked()

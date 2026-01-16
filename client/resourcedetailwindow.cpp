@@ -14,6 +14,9 @@
 #include <QPdfView>
 #include <QPdfPageNavigator>
 #include <QInputDialog>
+#include <QTreeWidget>
+#include <QHeaderView>
+#include <QDateTime>
 
 ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *parent)
     : QMainWindow(parent)
@@ -64,18 +67,58 @@ void ResourceDetailWindow::setupUI()
     // 评论区域
     m_commentGroup = new QGroupBox("评论");
     QVBoxLayout *commentLayout = new QVBoxLayout();
-    m_commentsDisplay = new QTextEdit();
-    m_commentsDisplay->setReadOnly(true);
+
+    m_replyToLabel = new QLabel("当前回复对象：无");
+    m_cancelReplyBtn = new QPushButton("取消回复");
+    m_cancelReplyBtn->setEnabled(false);
+
+    QHBoxLayout *replyBar = new QHBoxLayout();
+    replyBar->addWidget(m_replyToLabel);
+    replyBar->addStretch();
+    replyBar->addWidget(m_cancelReplyBtn);
+    commentLayout->addLayout(replyBar);
+
+    m_commentsTree = new QTreeWidget();
+    m_commentsTree->setHeaderHidden(true);
+    m_commentsTree->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_commentsTree->setSelectionBehavior(QAbstractItemView::SelectItems);
+    commentLayout->addWidget(m_commentsTree);
+
     m_commentEdit = new QTextEdit();
     m_commentEdit->setMaximumHeight(80);
     m_commentEdit->setPlaceholderText("输入评论...");
+
+    QHBoxLayout *commentBtnBar = new QHBoxLayout();
     m_commentSubmitBtn = new QPushButton("发表评论");
-    commentLayout->addWidget(m_commentsDisplay);
+    QPushButton *replyBtn = new QPushButton("回复选中评论");
+    commentBtnBar->addWidget(replyBtn);
+    commentBtnBar->addStretch();
+    commentBtnBar->addWidget(m_commentSubmitBtn);
+
     commentLayout->addWidget(m_commentEdit);
-    commentLayout->addWidget(m_commentSubmitBtn);
+    commentLayout->addLayout(commentBtnBar);
+
     m_commentGroup->setLayout(commentLayout);
     layout->addWidget(m_commentGroup);
+
     connect(m_commentSubmitBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onCommentSubmit);
+    connect(m_cancelReplyBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onCancelReply);
+    connect(replyBtn, &QPushButton::clicked, this, [this]() {
+        QTreeWidgetItem *item = m_commentsTree ? m_commentsTree->currentItem() : nullptr;
+        if (!item) {
+            QMessageBox::information(this, "提示", "请先在评论列表中选中要回复的评论");
+            return;
+        }
+        int commentId = item->data(0, Qt::UserRole).toInt();
+        QString author = item->data(0, Qt::UserRole + 1).toString();
+        if (commentId <= 0) {
+            QMessageBox::information(this, "提示", "该条目不可回复");
+            return;
+        }
+        m_replyToCommentId = commentId;
+        m_replyToLabel->setText(QString("当前回复对象：%1（评论ID：%2）").arg(author.isEmpty() ? "-" : author).arg(commentId));
+        m_cancelReplyBtn->setEnabled(true);
+    });
     
     // AI提问区域
     m_aiGroup = new QGroupBox("AI提问");
@@ -203,6 +246,13 @@ void ResourceDetailWindow::onPreviewPdfClicked()
     m_previewPdfBtn->setText("正在加载...");
 }
 
+void ResourceDetailWindow::onCancelReply()
+{
+    m_replyToCommentId = 0;
+    if (m_replyToLabel) m_replyToLabel->setText("当前回复对象：无");
+    if (m_cancelReplyBtn) m_cancelReplyBtn->setEnabled(false);
+}
+
 void ResourceDetailWindow::onCommentSubmit()
 {
     QString content = m_commentEdit->toPlainText().trimmed();
@@ -210,10 +260,13 @@ void ResourceDetailWindow::onCommentSubmit()
         QMessageBox::warning(this, "错误", "评论内容不能为空");
         return;
     }
-    
+
     QJsonObject data;
     data["content"] = content;
-    
+    if (m_replyToCommentId > 0) {
+        data["parent_id"] = m_replyToCommentId;
+    }
+
     QString url = QString("http://localhost:5000/api/resources/%1/comments").arg(m_resourceId);
     makeRequest(url, "POST", data);
 }
@@ -393,6 +446,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     if (statusCode == 201 && urlStr.contains("/comments")) {
         QMessageBox::information(this, "成功", "评论发表成功！");
         m_commentEdit->clear();
+        onCancelReply();
         loadComments();
         reply->deleteLater();
         return;
@@ -447,46 +501,46 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     // 处理评论列表
     if (urlStr.contains("/comments") && json.contains("comments")) {
         QJsonArray comments = json["comments"].toArray();
-        QString commentsText;
+        m_commentsTree->clear();
 
-        if (comments.isEmpty()) {
-            commentsText = "暂无评论，快来抢沙发吧~";
-        } else {
-            for (const QJsonValue &val : comments) {
-                QJsonObject c = val.toObject();
-                QString author = c["author"].toString("匿名");
-                QString rawTime = c["created_at"].toString("未知时间");
+        std::function<void(const QJsonArray&, QTreeWidgetItem*)> buildTree = [&](const QJsonArray &arr, QTreeWidgetItem *parentItem) {
+            for (const QJsonValue &v : arr) {
+                QJsonObject obj = v.toObject();
+                int cid = obj["id"].toInt();
+                QString author = obj["author"].toString("匿名");
+                QString content = obj["content"].toString().trimmed();
+                QString createIso = obj["created_at"].toString();
 
-                // 格式化时间：从 ISO 格式提取年-月-日 时:分:秒
-                QString formattedTime = rawTime;
-                if (rawTime.contains("T")) {
-                    QString datePart = rawTime.split("T").first();           // 2026-01-13
-                    QString timePart = rawTime.split("T").last().left(8);    // 07:30:53
-                    formattedTime = QString("（%1 %2）").arg(datePart).arg(timePart);
+                QDateTime dt = QDateTime::fromString(createIso, Qt::ISODate);
+                QString timeStr = dt.isValid() ? dt.toString("yyyy-MM-dd hh:mm:ss") : createIso;
+
+                QString text = QString("%1 %2\n%3").arg(author).arg(timeStr).arg(content);
+
+                QTreeWidgetItem *item;
+                if (parentItem) {
+                    item = new QTreeWidgetItem(parentItem);
+                } else {
+                    item = new QTreeWidgetItem(m_commentsTree);
                 }
+                item->setText(0, text);
+                item->setData(0, Qt::UserRole, cid);
+                item->setData(0, Qt::UserRole + 1, author);
 
-                QString content = c["content"].toString().trimmed();
-
-                // 修改后的拼接：第一行是 “用户名 （年-月-日 时:分:秒）”
-                commentsText += QString("%1 %2\n%3\n────────────────────\n\n")
-                                    .arg(author)
-                                    .arg(formattedTime)
-                                    .arg(content);
+                QJsonArray replies = obj["replies"].toArray();
+                if (!replies.isEmpty()) {
+                    buildTree(replies, item);
+                }
             }
+        };
+
+        if (!comments.isEmpty()) {
+            buildTree(comments, nullptr);
+            m_commentsTree->expandAll();
+        } else {
+            QTreeWidgetItem *emptyItem = new QTreeWidgetItem(m_commentsTree);
+            emptyItem->setText(0, "暂无评论，快来抢沙发吧~");
+            emptyItem->setFlags(emptyItem->flags() & ~Qt::ItemIsSelectable);
         }
-
-        m_commentsDisplay->setPlainText(commentsText);
-
-        // 滚动到底部
-        QTimer::singleShot(150, this, [this]() {
-            QScrollBar *scroll = m_commentsDisplay->verticalScrollBar();
-            if (scroll) {
-                scroll->setValue(scroll->maximum());
-            }
-            m_commentsDisplay->ensureCursorVisible();
-            m_commentsDisplay->repaint();
-            QApplication::processEvents();
-        });
     }
     
     // 处理AI回答

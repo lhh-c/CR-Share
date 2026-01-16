@@ -20,6 +20,7 @@ set(SOURCES
     searchresultwindow.cpp
     resourcedetailwindow.cpp
     reportmanagementwindow.cpp
+    notificationwindow.cpp
 )
 
 set(HEADERS
@@ -28,6 +29,7 @@ set(HEADERS
     searchresultwindow.h
     resourcedetailwindow.h
     reportmanagementwindow.h
+    notificationwindow.h
 )
 
 # 创建可执行文件

@@ -5,6 +5,7 @@
 #include <QTableWidget>
 #include <QPushButton>
 #include <QComboBox>
+#include <QDateTime>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QLabel>
@@ -39,7 +40,7 @@ private:
     int m_userId;
 
     QNetworkAccessManager *m_networkManager;
-    QComboBox *m_statusFilter;
+    QComboBox *m_statusFilter; // deprecated: kept for compatibility, no longer used
     QPushButton *m_refreshBtn;
 
     QTableWidget *m_table;

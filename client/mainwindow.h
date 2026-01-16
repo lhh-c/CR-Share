@@ -47,6 +47,7 @@ private slots:
     void onReviewResource();
     void onLogoutBtnClicked();
     void onDeleteAccountBtnClicked();
+    void onNotificationsClicked();
 
 private:
     void setupUI();
@@ -70,6 +71,7 @@ private:
     QPushButton *m_subscriptionsBtn;
     QPushButton *m_logoutBtn;
     QPushButton *m_deleteAccountBtn;
+    QPushButton *m_notificationsBtn;
 
     // 视图容器
     QGroupBox *m_recommendationGroup;
