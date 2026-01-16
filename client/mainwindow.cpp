@@ -1,6 +1,7 @@
 #include "mainwindow.h"
 #include "searchresultwindow.h"
 #include "resourcedetailwindow.h"
+#include "reportmanagementwindow.h"
 #include <QUrl>
 #include <QNetworkRequest>
 #include <QHttpMultiPart>
@@ -24,10 +25,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_userId(0),
     m_userRole("student"),
     m_uploadDialog(nullptr),
-    m_subscriptionsDialog(nullptr),
-    m_reviewDialog(nullptr)
+    m_subscriptionsDialog(nullptr)
 {
-    qDebug() << "MainWindow 构造函数：初始 m_userId =" << m_userId;
     setupUI();
     setupNetworkManager();
     loadResources();
@@ -37,16 +36,41 @@ MainWindow::MainWindow(QWidget *parent)
 void MainWindow::setUserId(int userId)
 {
     m_userId = userId;
-    qDebug() << "setUserId 被调用，m_userId 设置为：" << m_userId;
+
+    // 加载个人信息
+    QNetworkRequest request{QUrl("http://localhost:5000/api/users/me")};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+    QNetworkReply *reply = m_networkManager->get(request);
+    reply->setProperty("requestType", "my_profile");
 }
 
 void MainWindow::setUserRole(const QString &role)
 {
     m_userRole = role;
+
+    // 显示/隐藏举报管理入口（仅审核员）
+    auto reportManageBtn = findChild<QPushButton*>("reportManageBtn");
+    if (reportManageBtn) {
+        reportManageBtn->setVisible(m_userRole == "moderator");
+    }
+
     if (m_userRole == "moderator") {
-        m_reviewBtn->setVisible(true);
+        m_isModeratorMode = true;
+        m_modeToggleBtn->setVisible(true);
+        m_modeToggleBtn->setText("切换到用户");
+
+        m_reviewGroup->setVisible(true);
+        m_recommendationGroup->setVisible(false);
+
+        // 默认待审核
+        m_reviewStatusFilter->setCurrentIndex(0);
+        loadPendingResources();
     } else {
-        m_reviewBtn->setVisible(false);
+        m_isModeratorMode = false;
+        m_modeToggleBtn->setVisible(false);
+
+        m_reviewGroup->setVisible(false);
+        m_recommendationGroup->setVisible(true);
     }
 }
 
@@ -60,7 +84,12 @@ void MainWindow::setupUI()
 
     QVBoxLayout *mainLayout = new QVBoxLayout(centralWidget);
 
-    // 搜索栏
+    // 推荐资源列表
+    // 用户态视图（推荐资源）
+    m_recommendationGroup = new QGroupBox();
+    QVBoxLayout *recLayout = new QVBoxLayout(m_recommendationGroup);
+
+    // 搜索栏（只给用户态用，审核态不需要）
     QHBoxLayout *searchLayout = new QHBoxLayout();
     m_searchEdit = new QLineEdit();
     m_searchEdit->setPlaceholderText("搜索资源...");
@@ -72,13 +101,13 @@ void MainWindow::setupUI()
     searchLayout->addWidget(m_tagFilter);
     searchLayout->addWidget(m_searchBtn);
     searchLayout->addWidget(m_refreshBtn);
-    mainLayout->addLayout(searchLayout);
+    recLayout->addLayout(searchLayout);
 
-    // 推荐资源列表
     QLabel *recommendedLabel = new QLabel("推荐资源");
-    mainLayout->addWidget(recommendedLabel);
+    recLayout->addWidget(recommendedLabel);
+
     m_recommendedResourcesList = new QListWidget();
-    mainLayout->addWidget(m_recommendedResourcesList);
+    recLayout->addWidget(m_recommendedResourcesList);
 
     QHBoxLayout *mainPagerLayout = new QHBoxLayout();
     m_mainPrevBtn = new QPushButton("上一页");
@@ -88,7 +117,77 @@ void MainWindow::setupUI()
     mainPagerLayout->addWidget(m_mainPrevBtn);
     mainPagerLayout->addWidget(m_mainPageLabel, 1);
     mainPagerLayout->addWidget(m_mainNextBtn);
-    mainLayout->addLayout(mainPagerLayout);
+    recLayout->addLayout(mainPagerLayout);
+
+    mainLayout->addWidget(m_recommendationGroup);
+
+    // 审核态视图（资源审核）
+    m_reviewGroup = new QGroupBox("资源审核");
+    QVBoxLayout *reviewLayout = new QVBoxLayout(m_reviewGroup);
+
+    m_reviewStatusFilter = new QComboBox();
+    m_reviewStatusFilter->addItem("待审核", "pending");
+    m_reviewStatusFilter->addItem("已通过", "approved");
+    m_reviewStatusFilter->addItem("已拒绝", "rejected");
+    reviewLayout->addWidget(m_reviewStatusFilter);
+
+    m_pendingResourcesList = new QListWidget();
+    reviewLayout->addWidget(m_pendingResourcesList);
+
+    QHBoxLayout *reviewPagerLayout = new QHBoxLayout();
+    m_reviewPrevBtn = new QPushButton("上一页");
+    m_reviewNextBtn = new QPushButton("下一页");
+    m_reviewPageLabel = new QLabel();
+    m_reviewPageLabel->setAlignment(Qt::AlignCenter);
+    reviewPagerLayout->addWidget(m_reviewPrevBtn);
+    reviewPagerLayout->addWidget(m_reviewPageLabel, 1);
+    reviewPagerLayout->addWidget(m_reviewNextBtn);
+    reviewLayout->addLayout(reviewPagerLayout);
+
+    QHBoxLayout *reviewBtnLayout = new QHBoxLayout();
+    m_reviewRefreshBtn = new QPushButton("刷新");
+    m_approveBtn = new QPushButton("通过");
+    m_rejectBtn = new QPushButton("拒绝");
+
+    QPushButton *reportManageBtn = new QPushButton("举报管理");
+    reportManageBtn->setObjectName("reportManageBtn");
+    reportManageBtn->setVisible(false);
+
+    reviewBtnLayout->addWidget(reportManageBtn);
+    reviewBtnLayout->addStretch();
+    reviewBtnLayout->addWidget(m_reviewRefreshBtn);
+    reviewBtnLayout->addWidget(m_approveBtn);
+    reviewBtnLayout->addWidget(m_rejectBtn);
+    reviewLayout->addLayout(reviewBtnLayout);
+
+    connect(reportManageBtn, &QPushButton::clicked, this, [this]() {
+        ReportManagementWindow *w = new ReportManagementWindow(m_userId, this);
+        w->setAttribute(Qt::WA_DeleteOnClose);
+        w->show();
+    });
+
+    connect(m_reviewPrevBtn, &QPushButton::clicked, this, [this]() {
+        if (m_reviewPage > 1) {
+            m_reviewPage -= 1;
+            loadPendingResources();
+        }
+    });
+
+    connect(m_reviewNextBtn, &QPushButton::clicked, this, [this]() {
+        int totalPages = (m_reviewTotal + m_reviewPageSize - 1) / m_reviewPageSize;
+        if (totalPages <= 0) totalPages = 1;
+        if (m_reviewPage < totalPages) {
+            m_reviewPage += 1;
+            loadPendingResources();
+        }
+    });
+
+    connect(m_reviewRefreshBtn, &QPushButton::clicked, this, [this]() {
+        m_reviewPage = 1;
+        loadPendingResources();
+    });
+
+    mainLayout->addWidget(m_reviewGroup);
 
     connect(m_mainPrevBtn, &QPushButton::clicked, this, [this]() {
         if (m_mainPage > 1) {
@@ -106,29 +205,93 @@ void MainWindow::setupUI()
         }
     });
 
-    // 功能按钮区域
+    // 我的信息（所有角色都显示）
+    QGroupBox *profileGroup = new QGroupBox("我的信息");
+    QVBoxLayout *profileLayout = new QVBoxLayout(profileGroup);
+
+    m_profileUsernameLabel = new QLabel("用户名：-");
+    m_profileEmailLabel = new QLabel("邮箱：-");
+    m_profileRoleLabel = new QLabel("角色：-");
+
+    profileLayout->addWidget(m_profileUsernameLabel);
+    profileLayout->addWidget(m_profileEmailLabel);
+    profileLayout->addWidget(m_profileRoleLabel);
+
+    QHBoxLayout *accountBtnLayout = new QHBoxLayout();
+    m_logoutBtn = new QPushButton("退出登录");
+    m_deleteAccountBtn = new QPushButton("注销账号");
+    accountBtnLayout->addWidget(m_logoutBtn);
+    accountBtnLayout->addWidget(m_deleteAccountBtn);
+    accountBtnLayout->addStretch();
+    profileLayout->addLayout(accountBtnLayout);
+
+    mainLayout->addWidget(profileGroup);
+
+    // 功能按钮区域（用户态）
     QHBoxLayout *functionLayout = new QHBoxLayout();
     m_uploadBtn = new QPushButton("上传资源");
     m_subscriptionsBtn = new QPushButton("我的订阅");
-    m_reviewBtn = new QPushButton("资源审核");
     functionLayout->addWidget(m_uploadBtn);
     functionLayout->addWidget(m_subscriptionsBtn);
-    functionLayout->addWidget(m_reviewBtn);
     functionLayout->addStretch();
-    mainLayout->addLayout(functionLayout);
+    recLayout->addLayout(functionLayout);
 
-    m_reviewBtn->setVisible(m_userRole == "moderator");
+    connect(m_logoutBtn, &QPushButton::clicked, this, &MainWindow::onLogoutBtnClicked);
+    connect(m_deleteAccountBtn, &QPushButton::clicked, this, &MainWindow::onDeleteAccountBtnClicked);
 
     connect(m_searchBtn, &QPushButton::clicked, this, &MainWindow::onSearchClicked);
     connect(m_refreshBtn, &QPushButton::clicked, this, &MainWindow::onRefreshClicked);
     connect(m_recommendedResourcesList, &QListWidget::itemClicked, this, &MainWindow::onResourceSelected);
     connect(m_uploadBtn, &QPushButton::clicked, this, &MainWindow::onUploadClicked);
     connect(m_subscriptionsBtn, &QPushButton::clicked, this, &MainWindow::onSubscriptionsClicked);
-    connect(m_reviewBtn, &QPushButton::clicked, this, &MainWindow::onReviewClicked);
+    connect(m_reviewStatusFilter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
+        m_reviewPage = 1;
+        loadPendingResources();
+    });
+
+    connect(m_pendingResourcesList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
+        if (!item) return;
+        int resId = item->data(Qt::UserRole).toInt();
+        if (resId <= 0) return;
+        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, this);
+        detailWindow->show();
+    });
+
+    connect(m_approveBtn, &QPushButton::clicked, this, &MainWindow::onReviewResource);
+    connect(m_rejectBtn, &QPushButton::clicked, this, &MainWindow::onReviewResource);
+
+    // 左下角切换按钮
+    m_modeToggleBtn = new QPushButton("切换到审核");
+    m_modeToggleBtn->setVisible(false);
+    QHBoxLayout *bottomLayout = new QHBoxLayout();
+    bottomLayout->addWidget(m_modeToggleBtn);
+    bottomLayout->addStretch();
+    mainLayout->addLayout(bottomLayout);
+
+    connect(m_modeToggleBtn, &QPushButton::clicked, this, [this]() {
+        if (m_userRole != "moderator") return;
+
+        m_isModeratorMode = !m_isModeratorMode;
+
+        if (m_isModeratorMode) {
+            m_modeToggleBtn->setText("切换到用户");
+            m_reviewGroup->setVisible(true);
+            m_recommendationGroup->setVisible(false);
+            m_reviewStatusFilter->setCurrentIndex(0);
+            loadPendingResources();
+        } else {
+            m_modeToggleBtn->setText("切换到审核");
+            m_reviewGroup->setVisible(false);
+            m_recommendationGroup->setVisible(true);
+        }
+    });
+
+    // 默认先显示用户态
+    m_reviewGroup->setVisible(false);
+    m_recommendationGroup->setVisible(true);
 
     m_uploadDialog = nullptr;
     m_subscriptionsDialog = nullptr;
-    m_reviewDialog = nullptr;
 }
 
 void MainWindow::setupNetworkManager()
@@ -210,27 +373,20 @@ QJsonObject MainWindow::makeRequest(const QString &urlStr, const QString &method
 
 void MainWindow::onNetworkReply(QNetworkReply *reply)
 {
-    qDebug() << "=== onNetworkReply 调试 ===";
-    qDebug() << "请求URL:" << reply->url().toString();
-    qDebug() << "请求类型:" << reply->property("requestType").toString();
-    qDebug() << "响应状态码:" << reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
     if (statusCode == 401) {
-        qDebug() << "401 Unauthorized (忽略弹窗):" << reply->url().toString();
         reply->deleteLater();
         return;
     }
 
     if (statusCode == 400) {
         QByteArray errData = reply->readAll();
-        qDebug() << "400 Bad Request - 完整响应体:" << QString(errData);
         QString friendlyMsg = "操作失败（400）";
         QJsonDocument errDoc = QJsonDocument::fromJson(errData);
         if (!errDoc.isNull() && errDoc.isObject()) {
             QString errorText = errDoc.object()["error"].toString().trimmed();
-            qDebug() << "服务器返回 error 字段:" << errorText;
             if (errorText.contains("已订阅") ||
                 errorText.contains("已经订阅") ||
                 errorText.contains("重复") ||
@@ -242,7 +398,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
                 friendlyMsg = "订阅失败：" + errorText;
             }
         } else {
-            qDebug() << "400 响应不是有效 JSON";
             friendlyMsg = "订阅失败：服务器拒绝了请求";
         }
         showError(friendlyMsg);
@@ -251,8 +406,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
     }
 
     if (statusCode < 200 || statusCode >= 300) {
-        QByteArray errData = reply->readAll();
-        qDebug() << "服务器返回错误状态码:" << statusCode << "，内容预览:" << QString(errData.left(200));
         showError(QString("服务器错误 %1").arg(statusCode));
         reply->deleteLater();
         return;
@@ -260,23 +413,17 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
 
     if (reply->error() != QNetworkReply::NoError) {
         QString errMsg = QString("网络错误: %1").arg(reply->errorString());
-        qDebug() << errMsg;
         showError(errMsg);
         reply->deleteLater();
         return;
     }
 
     QByteArray responseData = reply->readAll();
-    qDebug() << "统一读取响应数据长度:" << responseData.size();
-    QString preview = (responseData.size() > 200) ? QString(responseData.left(200)) : QString(responseData);
-    qDebug() << "响应内容预览:" << preview;
-
     QString urlStr = reply->url().toString();
     QString requestType = reply->property("requestType").toString();
 
     QJsonDocument doc = QJsonDocument::fromJson(responseData);
     if (doc.isNull() || !doc.isObject()) {
-        qDebug() << "JSON 解析失败";
         showError("服务器响应格式错误（非有效 JSON）");
         reply->deleteLater();
         return;
@@ -284,7 +431,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
     QJsonObject json = doc.object();
 
     if (urlStr.contains("/api/tags")) {
-        qDebug() << "进入 /api/tags 处理分支";
         QJsonArray tagsArray = json["tags"].toArray();
         qDebug() << "获取 tagsArray 成功，大小:" << tagsArray.size();
 
@@ -352,18 +498,23 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
         m_subPrevBtn->setEnabled(m_subPage > 1);
         m_subNextBtn->setEnabled(m_subPage < totalPages);
     }
-    else if (reply->property("requestType").toString() == "pendingResources" ||
-             urlStr.contains("/api/resources?status=pending")) {
+    else if (reply->property("requestType").toString() == "review_resources") {
+        m_reviewPage = json["page"].toInt(1);
+        m_reviewPageSize = json["page_size"].toInt(20);
+        m_reviewTotal = json["total"].toInt(0);
+
         QJsonArray resources = json["resources"].toArray();
-        qDebug() << "=== 处理待审核资源 (pending) ===";
-        qDebug() << "数量:" << resources.size();
+        qDebug() << "=== 处理审核资源列表 ===";
+        qDebug() << "数量:" << resources.size() << "总数:" << m_reviewTotal;
 
         if (m_pendingResourcesList) {
             m_pendingResourcesList->clear();
-            qDebug() << "清空 m_pendingResourcesList 完成";
 
             if (resources.isEmpty()) {
-                m_pendingResourcesList->addItem("暂无待审核资源");
+                QString statusText = m_reviewStatusFilter ? m_reviewStatusFilter->currentText() : "待审核";
+                QListWidgetItem *emptyItem = new QListWidgetItem(QString("暂无%1资源").arg(statusText));
+                emptyItem->setFlags(emptyItem->flags() & ~Qt::ItemIsSelectable);
+                m_pendingResourcesList->addItem(emptyItem);
             } else {
                 for (const QJsonValue &val : resources) {
                     QJsonObject res = val.toObject();
@@ -372,14 +523,30 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
                     QListWidgetItem *item = new QListWidgetItem(title);
                     item->setData(Qt::UserRole, id);
                     m_pendingResourcesList->addItem(item);
-                    qDebug() << "添加待审核: " << title << " (ID:" << id << ")";
                 }
             }
+
+            // 更新分页UI
+            int totalPages = (m_reviewTotal + m_reviewPageSize - 1) / m_reviewPageSize;
+            if (totalPages <= 0) totalPages = 1;
+            m_reviewPageLabel->setText(QString("第 %1/%2 页").arg(m_reviewPage).arg(totalPages));
+            m_reviewPrevBtn->setEnabled(m_reviewPage > 1);
+            m_reviewNextBtn->setEnabled(m_reviewPage < totalPages);
+
             m_pendingResourcesList->update();
             m_pendingResourcesList->repaint();
         } else {
             qDebug() << "m_pendingResourcesList nullptr";
         }
+    }
+    else if (reply->property("requestType").toString() == "my_profile") {
+        QJsonObject u = json["user"].toObject();
+        QString username = u["username"].toString();
+        QString email = u["email"].toString();
+        QString role = u["role"].toString();
+        if (m_profileUsernameLabel) m_profileUsernameLabel->setText(QString("用户名：%1").arg(username.isEmpty() ? "-" : username));
+        if (m_profileEmailLabel) m_profileEmailLabel->setText(QString("邮箱：%1").arg(email.isEmpty() ? "-" : email));
+        if (m_profileRoleLabel) m_profileRoleLabel->setText(QString("角色：%1").arg(role.isEmpty() ? "-" : role));
     }
     else if (reply->property("requestType").toString() == "main_resources") {
         m_mainPage = json["page"].toInt(1);
@@ -413,12 +580,44 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
         m_mainPrevBtn->setEnabled(m_mainPage > 1);
         m_mainNextBtn->setEnabled(m_mainPage < totalPages);
     }
+    else if (reply->property("requestType").toString() == "logout") {
+        showSuccess("已退出登录");
+        emit logoutRequested();
+        close();
+    }
+    else if (reply->property("requestType").toString() == "delete_account") {
+        showSuccess("账号已注销");
+        emit logoutRequested();
+        close();
+    }
     else if (statusCode == 201 && urlStr.contains("/api/resources") && !urlStr.contains("/api/resources/")) {
         showSuccess("资源上传成功！");
         loadResources();
     }
 
     reply->deleteLater();
+}
+
+void MainWindow::onLogoutBtnClicked()
+{
+    auto ret = QMessageBox::question(this, "确认", "确定要退出登录吗？", QMessageBox::Yes | QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
+    QNetworkRequest request{QUrl("http://localhost:5000/api/auth/logout")};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+    QNetworkReply *reply = m_networkManager->post(request, QByteArray());
+    reply->setProperty("requestType", "logout");
+}
+
+void MainWindow::onDeleteAccountBtnClicked()
+{
+    auto ret = QMessageBox::warning(this, "危险操作", "确定要注销账号吗？此操作不可恢复。", QMessageBox::Yes | QMessageBox::No);
+    if (ret != QMessageBox::Yes) return;
+
+    QNetworkRequest request{QUrl("http://localhost:5000/api/users/me")};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+    QNetworkReply *reply = m_networkManager->deleteResource(request);
+    reply->setProperty("requestType", "delete_account");
 }
 
 void MainWindow::onSearchClicked()
@@ -627,78 +826,6 @@ void MainWindow::setupSubscriptionsDialog()
     });
 }
 
-void MainWindow::onReviewClicked()
-{
-    if (m_userRole != "moderator") {
-        showError("只有审核员才能访问此功能");
-        return;
-    }
-
-    if (!m_reviewDialog) {
-        setupReviewDialog();
-    }
-
-    loadPendingResources();
-
-    m_reviewDialog->show();
-    m_reviewDialog->raise();
-    m_reviewDialog->activateWindow();
-
-    qDebug() << "审核对话框已非模态打开";
-}
-
-void MainWindow::setupReviewDialog()
-{
-    if (m_reviewDialog) return;
-
-    m_reviewDialog = new QDialog(this);
-    m_reviewDialog->setWindowTitle("资源审核");
-    m_reviewDialog->setMinimumSize(800, 600);
-
-    QVBoxLayout *mainLayout = new QVBoxLayout(m_reviewDialog);
-
-    m_reviewStatusFilter = new QComboBox();
-    m_reviewStatusFilter->addItem("待审核", "pending");
-    m_reviewStatusFilter->addItem("已通过", "approved");
-    m_reviewStatusFilter->addItem("已拒绝", "rejected");
-    mainLayout->addWidget(m_reviewStatusFilter);
-
-    m_pendingResourcesList = new QListWidget(m_reviewDialog);
-    mainLayout->addWidget(m_pendingResourcesList);
-
-    QHBoxLayout *btnLayout = new QHBoxLayout();
-    m_approveBtn = new QPushButton("通过");
-    m_rejectBtn = new QPushButton("拒绝");
-    btnLayout->addStretch();
-    btnLayout->addWidget(m_approveBtn);
-    btnLayout->addWidget(m_rejectBtn);
-    mainLayout->addLayout(btnLayout);
-
-    connect(m_approveBtn, &QPushButton::clicked, this, &MainWindow::onReviewResource);
-    connect(m_rejectBtn, &QPushButton::clicked, this, &MainWindow::onReviewResource);
-
-    connect(m_reviewStatusFilter, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this]() {
-        qDebug() << "下拉框变化，但暂不切换状态";
-        loadPendingResources();
-    });
-
-    connect(m_pendingResourcesList, &QListWidget::itemClicked, this, [this](QListWidgetItem *item) {
-        if (!item) return;
-        int resId = item->data(Qt::UserRole).toInt();
-        if (resId <= 0) return;
-
-        ResourceDetailWindow *detailWindow = new ResourceDetailWindow(resId, m_userId, nullptr);
-        detailWindow->setWindowFlags(Qt::Window | Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowCloseButtonHint);
-        detailWindow->setAttribute(Qt::WA_DeleteOnClose, true);
-        detailWindow->show();
-
-        qDebug() << "打开详情窗口，父对象:" << detailWindow->parent() << " (应为 nullptr)";
-    });
-
-    qDebug() << "setupReviewDialog 完成";
-    qDebug() << "m_pendingResourcesList 地址:" << m_pendingResourcesList;
-    qDebug() << "m_recommendedResourcesList 地址:" << m_recommendedResourcesList;
-}
 
 void MainWindow::onSubscribeClicked()
 {
@@ -780,16 +907,24 @@ void MainWindow::loadSubscriptions()
 
 void MainWindow::loadPendingResources()
 {
-    QString url = "http://localhost:5000/api/resources?status=pending";
+    QString status = "pending";
+    if (m_reviewStatusFilter) {
+        status = m_reviewStatusFilter->currentData().toString();
+        if (status.isEmpty()) status = "pending";
+    }
+
+    QString url = QString("http://localhost:5000/api/resources?status=%1&page=%2&page_size=%3&sort=new")
+                  .arg(status)
+                  .arg(m_reviewPage)
+                  .arg(m_reviewPageSize);
+
     QNetworkRequest request{QUrl(url)};
     request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
 
     QNetworkReply *reply = m_networkManager->get(request);
-    reply->setProperty("url", url);
-    reply->setProperty("method", "GET");
-    reply->setProperty("requestType", "pendingResources");
+    reply->setProperty("requestType", "review_resources");
 
-    qDebug() << "加载待审核资源 (固定 pending)";
+    qDebug() << "加载审核资源:" << status << "page=" << m_reviewPage;
 }
 
 void MainWindow::showError(const QString &message)

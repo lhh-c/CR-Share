@@ -137,7 +137,6 @@ void SearchResultWindow::loadSearchResults()
     QNetworkReply *reply = m_networkManager->get(request);
     reply->setProperty("requestType", "searchResults");  // 关键标记，便于区分
 
-    qDebug() << "发起搜索请求:" << url.toString();
 
     int totalPages = (m_total + m_pageSize - 1) / m_pageSize;
     if (totalPages <= 0) totalPages = 1;
@@ -174,16 +173,30 @@ void SearchResultWindow::onNetworkReply(QNetworkReply *reply)
         m_statusLabel->setText("网络错误: " + reply->errorString());
         m_prevButton->setEnabled(false);
         m_nextButton->setEnabled(false);
-        QMessageBox::warning(this, "错误", reply->errorString());
+        QMessageBox::warning(this, "网络错误", "请求失败了，请检查网络连接：" + reply->errorString());
         reply->deleteLater();
         return;
     }
 
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     if (statusCode < 200 || statusCode >= 300) {
-        m_statusLabel->setText("服务器错误 " + QString::number(statusCode));
+        QString friendly;
+        if (statusCode == 401) {
+            friendly = "您需要登录才能查看搜索结果。";
+        } else if (statusCode == 403) {
+            friendly = "抱歉，您没有权限查看这些资源。";
+        } else if (statusCode == 404) {
+            friendly = "找不到请求的内容。";
+        } else if (statusCode >= 500) {
+            friendly = "服务器开小差了，请稍后再试。";
+        } else {
+            friendly = QString("请求失败（%1）").arg(statusCode);
+        }
+
+        m_statusLabel->setText(friendly);
         m_prevButton->setEnabled(false);
         m_nextButton->setEnabled(false);
+        QMessageBox::warning(this, "出错了", friendly);
         reply->deleteLater();
         return;
     }

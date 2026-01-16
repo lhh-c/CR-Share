@@ -22,6 +22,7 @@ public:
 private slots:
     void onDownloadClicked();
     void onPreviewPdfClicked();
+    void onReportClicked();
     void onCommentSubmit();
     void onAiAsk();
     void onNetworkReply(QNetworkReply *reply);
@@ -40,6 +41,7 @@ private:
     QTextEdit *m_resourceDetails;
     QPushButton *m_downloadBtn;
     QPushButton *m_previewPdfBtn;
+    QPushButton *m_reportBtn;
 
     QString m_fileType;
     QString m_lastPdfPath;

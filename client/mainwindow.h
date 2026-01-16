@@ -32,16 +32,21 @@ public:
     void setUserId(int userId);
     void setUserRole(const QString &role);
 
+signals:
+    void logoutRequested();
+
 private slots:
     void onSearchClicked();
     void onResourceSelected(QListWidgetItem *item);
     void onRefreshClicked();
     void onUploadClicked();
     void onSubscriptionsClicked();
-    void onReviewClicked();
     void loadResources();
     void loadTags();
     void onNetworkReply(QNetworkReply *reply);
+    void onReviewResource();
+    void onLogoutBtnClicked();
+    void onDeleteAccountBtnClicked();
 
 private:
     void setupUI();
@@ -60,9 +65,25 @@ private:
     QListWidget *m_recommendedResourcesList;  // 推荐资源列表
     
     // 功能按钮
+    QPushButton *m_modeToggleBtn;  // 审核员模式切换
     QPushButton *m_uploadBtn;
     QPushButton *m_subscriptionsBtn;
-    QPushButton *m_reviewBtn;  // 仅审核员可见
+    QPushButton *m_logoutBtn;
+    QPushButton *m_deleteAccountBtn;
+
+    // 视图容器
+    QGroupBox *m_recommendationGroup;
+    QGroupBox *m_reviewGroup;
+
+    // 审核员当前模式
+    bool m_isModeratorMode = false;
+
+    QLabel *m_recommendedLabel;
+
+    // 我的信息展示
+    QLabel *m_profileUsernameLabel;
+    QLabel *m_profileEmailLabel;
+    QLabel *m_profileRoleLabel;
     
     // 上传对话框相关（保留用于上传功能）
     QDialog *m_uploadDialog;
@@ -97,12 +118,20 @@ private:
     int m_mainPageSize = 20;
     int m_mainTotal = 0;
     
-    // 审核对话框相关（保留用于审核功能）
-    QDialog *m_reviewDialog;
+    // 审核界面相关（主界面内嵌）
     QComboBox *m_reviewStatusFilter;
     QListWidget *m_pendingResourcesList;
     QPushButton *m_approveBtn;
     QPushButton *m_rejectBtn;
+    QPushButton *m_reviewRefreshBtn;
+
+    // 审核列表分页
+    QPushButton *m_reviewPrevBtn;
+    QPushButton *m_reviewNextBtn;
+    QLabel *m_reviewPageLabel;
+    int m_reviewPage = 1;
+    int m_reviewPageSize = 20;
+    int m_reviewTotal = 0;
     
     // 网络
     QNetworkAccessManager *m_networkManager;
@@ -116,11 +145,9 @@ private:
     //void loadPendingResources(const QString &status = "pending");
     void setupUploadDialog();
     void setupSubscriptionsDialog();
-    void setupReviewDialog();
     void onUploadSubmit();
     void onSubscribeClicked();
     void onUnsubscribeClicked();
-    void onReviewResource();
     void loadSubscriptions();
 };
 

@@ -11,16 +11,23 @@ int main(int argc, char *argv[])
     app.setApplicationVersion("1.0");
     app.setOrganizationName("重庆师范大学");
     
-    // 显示登录窗口
-    LoginWindow loginWindow;
-    if (loginWindow.exec() == QDialog::Accepted) {
-        // 登录成功，显示主窗口
+    while (true) {
+        LoginWindow loginWindow;
+        if (loginWindow.exec() != QDialog::Accepted) {
+            break;
+        }
+
         MainWindow mainWindow;
         mainWindow.setUserId(loginWindow.getUserId());
         mainWindow.setUserRole(loginWindow.getUserRole());
+
+        QObject::connect(&mainWindow, &MainWindow::logoutRequested, &app, [&app]() {
+            app.quit();
+        });
+
         mainWindow.show();
-        return app.exec();
+        app.exec();
     }
-    
+
     return 0;
 }

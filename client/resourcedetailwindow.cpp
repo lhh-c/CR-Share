@@ -12,6 +12,8 @@
 #include <QApplication>
 #include <QPdfDocument>
 #include <QPdfView>
+#include <QPdfPageNavigator>
+#include <QInputDialog>
 
 ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *parent)
     : QMainWindow(parent)
@@ -53,6 +55,11 @@ void ResourceDetailWindow::setupUI()
     m_previewPdfBtn->setEnabled(false);
     layout->addWidget(m_previewPdfBtn);
     connect(m_previewPdfBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onPreviewPdfClicked);
+
+    // 举报按钮
+    m_reportBtn = new QPushButton("举报资源");
+    layout->addWidget(m_reportBtn);
+    connect(m_reportBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onReportClicked);
     
     // 评论区域
     m_commentGroup = new QGroupBox("评论");
@@ -117,6 +124,31 @@ void ResourceDetailWindow::onDownloadClicked()
     reply->setProperty("resourceId", m_resourceId);
 }
 
+void ResourceDetailWindow::onReportClicked()
+{
+    bool ok = false;
+    QString reason = QInputDialog::getMultiLineText(this, "举报资源", "请输入举报原因（必填）：", "", &ok);
+    if (!ok) return;
+
+    reason = reason.trimmed();
+    if (reason.isEmpty()) {
+        QMessageBox::warning(this, "错误", "举报原因不能为空");
+        return;
+    }
+
+    QJsonObject data;
+    data["resource_id"] = m_resourceId;
+    data["reason"] = reason;
+
+    QNetworkRequest request{QUrl("http://localhost:5000/api/reports")};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+
+    QJsonDocument doc(data);
+    QNetworkReply *reply = m_networkManager->post(request, doc.toJson());
+    reply->setProperty("requestType", "report");
+}
+
 void ResourceDetailWindow::onPreviewPdfClicked()
 {
     // 只支持 PDF
@@ -134,11 +166,25 @@ void ResourceDetailWindow::onPreviewPdfClicked()
         }
 
         QPdfView *view = new QPdfView();
-        view->setWindowTitle("PDF预览");
         view->resize(900, 700);
         view->setPageMode(QPdfView::PageMode::MultiPage);
         view->setZoomMode(QPdfView::ZoomMode::FitToWidth);
         view->setDocument(doc);
+
+        int totalPages = doc->pageCount();
+        int currentPage = 1;
+        if (view->pageNavigator()) {
+            currentPage = view->pageNavigator()->currentPage() + 1;
+        }
+        view->setWindowTitle(QString("PDF预览 - 第%1页/共%2页").arg(currentPage).arg(totalPages));
+
+        if (view->pageNavigator()) {
+            connect(view->pageNavigator(), &QPdfPageNavigator::currentPageChanged, view, [view, doc](int page) {
+                int total = doc->pageCount();
+                view->setWindowTitle(QString("PDF预览 - 第%1页/共%2页").arg(page + 1).arg(total));
+            });
+        }
+
         view->show();
         return;
     }
@@ -213,8 +259,14 @@ QJsonObject ResourceDetailWindow::makeRequest(const QString &urlStr, const QStri
 
 void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
 {
+    // 预览下载失败时，恢复按钮状态
+    if (reply->property("requestType").toString() == "preview_download" && reply->error() != QNetworkReply::NoError) {
+        m_previewPdfBtn->setEnabled(true);
+        m_previewPdfBtn->setText("预览PDF");
+    }
+
     if (reply->error() != QNetworkReply::NoError) {
-        QMessageBox::warning(this, "错误", "网络请求失败: " + reply->errorString());
+        QMessageBox::warning(this, "网络错误", "请求失败了，请检查网络连接: " + reply->errorString());
         reply->deleteLater();
         return;
     }
@@ -222,6 +274,38 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
     QString urlStr = reply->property("url").toString();
     QString method = reply->property("method").toString();
+
+    if (statusCode >= 400) {
+        // 预览下载失败时，恢复按钮状态
+        if (reply->property("requestType").toString() == "preview_download") {
+            m_previewPdfBtn->setEnabled(true);
+            m_previewPdfBtn->setText("预览PDF");
+        }
+
+        QString errorMsg;
+        switch (statusCode) {
+            case 401:
+                errorMsg = "您需要登录才能执行此操作，请重新登录。";
+                break;
+            case 403:
+                errorMsg = "抱歉，您没有权限执行此操作。";
+                break;
+            case 404:
+                errorMsg = "找不到请求的资源，它可能已被删除。";
+                break;
+            default:
+                if (statusCode >= 500) {
+                    errorMsg = QString("服务器开小差了（错误码: %1），请稍后再试。").arg(statusCode);
+                } else {
+                    errorMsg = QString("请求出错了（错误码: %1）。").arg(statusCode);
+                }
+                break;
+        }
+        QMessageBox::warning(this, "出错了", errorMsg);
+        reply->deleteLater();
+        return;
+    }
+
     
     // 处理文件下载
     if (reply->property("requestType").toString() == "download" || reply->property("requestType").toString() == "preview_download") {
@@ -247,11 +331,25 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                 }
 
                 QPdfView *view = new QPdfView();
-                view->setWindowTitle("PDF预览");
                 view->resize(900, 700);
                 view->setPageMode(QPdfView::PageMode::MultiPage);
                 view->setZoomMode(QPdfView::ZoomMode::FitToWidth);
                 view->setDocument(doc);
+
+                int totalPages = doc->pageCount();
+                int currentPage = 1;
+                if (view->pageNavigator()) {
+                    currentPage = view->pageNavigator()->currentPage() + 1;
+                }
+                view->setWindowTitle(QString("PDF预览 - 第%1页/共%2页").arg(currentPage).arg(totalPages));
+
+                if (view->pageNavigator()) {
+                    connect(view->pageNavigator(), &QPdfPageNavigator::currentPageChanged, view, [view, doc](int page) {
+                        int total = doc->pageCount();
+                        view->setWindowTitle(QString("PDF预览 - 第%1页/共%2页").arg(page + 1).arg(total));
+                    });
+                }
+
                 view->show();
             } else {
                 QMessageBox::warning(this, "错误", "无法缓存PDF用于预览");
@@ -284,6 +382,13 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         return;
     }
     
+    // 处理举报提交成功
+    if (reply->property("requestType").toString() == "report") {
+        QMessageBox::information(this, "成功", "举报已提交，感谢您的反馈！");
+        reply->deleteLater();
+        return;
+    }
+
     // 处理评论提交成功
     if (statusCode == 201 && urlStr.contains("/comments")) {
         QMessageBox::information(this, "成功", "评论发表成功！");

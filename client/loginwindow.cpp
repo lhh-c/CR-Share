@@ -91,8 +91,8 @@ void LoginWindow::onNetworkReply(QNetworkReply *reply)
     QString action = reply->property("action").toString();
     
     if (reply->error() != QNetworkReply::NoError) {
-        QMessageBox::critical(this, "错误", 
-                             QString("网络错误: %1").arg(reply->errorString()));
+        QMessageBox::critical(this, "网络错误", 
+                             QString("请求失败了，请检查网络连接：%1").arg(reply->errorString()));
         reply->deleteLater();
         return;
     }
