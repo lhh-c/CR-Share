@@ -443,40 +443,27 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
 
     if (urlStr.contains("/api/tags")) {
         QJsonArray tagsArray = json["tags"].toArray();
-        qDebug() << "获取 tagsArray 成功，大小:" << tagsArray.size();
+        
 
         if (m_tagFilter) {
-            qDebug() << "m_tagFilter 不为空，开始 clear";
             m_tagFilter->clear();
-            qDebug() << "m_tagFilter clear 完成";
             m_tagFilter->addItem("全部标签", "");
-            qDebug() << "添加 '全部标签' 项完成";
 
             int index = 0;
             for (const QJsonValue &val : tagsArray) {
-                qDebug() << "处理第" << index << "个 tag 值:" << val.toVariant();
                 if (!val.isObject()) {
-                    qDebug() << "警告: 第" << index << "个 val 不是 JSON 对象，跳过";
                     continue;
                 }
                 QJsonObject tag = val.toObject();
-                qDebug() << "转换 tag 为对象完成";
                 QString name = tag.value("name").toString();
                 int id = tag.value("id").toInt();
-                qDebug() << "提取 name:" << name << " id:" << id;
                 if (name.isEmpty()) {
-                    qDebug() << "警告: name 为空，跳过添加";
                     continue;
                 }
                 m_tagFilter->addItem(name, id);
-                qDebug() << "成功添加第" << index << "个 tag 到 m_tagFilter";
                 index++;
             }
-        } else {
-            qDebug() << "警告: m_tagFilter 是 nullptr，未处理下拉框";
         }
-
-        qDebug() << "标签加载完成，总数:" << tagsArray.size();
     }
     else if (reply->property("requestType").toString() == "subscription_resources") {
         m_subPage = json["page"].toInt(1);
@@ -484,7 +471,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
         m_subTotal = json["total"].toInt(0);
 
         QJsonArray resources = json["resources"].toArray();
-        qDebug() << "订阅资源加载完成，数量:" << resources.size() << "总数:" << m_subTotal;
         
         m_subscribedResourcesList->clear();
         for (const QJsonValue &val : resources) {
@@ -515,8 +501,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
         m_reviewTotal = json["total"].toInt(0);
 
         QJsonArray resources = json["resources"].toArray();
-        qDebug() << "=== 处理审核资源列表 ===";
-        qDebug() << "数量:" << resources.size() << "总数:" << m_reviewTotal;
 
         if (m_pendingResourcesList) {
             m_pendingResourcesList->clear();
@@ -546,8 +530,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
 
             m_pendingResourcesList->update();
             m_pendingResourcesList->repaint();
-        } else {
-            qDebug() << "m_pendingResourcesList nullptr";
         }
     }
     else if (reply->property("requestType").toString() == "my_profile") {
@@ -565,7 +547,6 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
         m_mainTotal = json["total"].toInt(0);
         QJsonArray resources = json["resources"].toArray();
         
-        qDebug() << "主界面推荐资源加载完成，数量:" << resources.size() << "总数:" << m_mainTotal;
 
         m_recommendedResourcesList->clear();
         for (const QJsonValue &val : resources) {
@@ -776,12 +757,10 @@ void MainWindow::onSubscriptionsClicked()
 {
     if (!m_subscriptionsDialog) {
         setupSubscriptionsDialog();
-        qDebug() << "订阅对话框已创建";
     }
 
     if (m_tagsList) {
         m_tagsList->clear();
-        qDebug() << "刷新 m_tagsList 开始";
 
         for (int i = 1; i < m_tagFilter->count(); ++i) {
             QString name = m_tagFilter->itemText(i);
@@ -790,16 +769,13 @@ void MainWindow::onSubscriptionsClicked()
                 QListWidgetItem *item = new QListWidgetItem(name);
                 item->setData(Qt::UserRole, id);
                 m_tagsList->addItem(item);
-                qDebug() << "添加标签到 m_tagsList: " << name << " (ID: " << id << ")";
             }
         }
 
         if (m_tagsList->count() == 0) {
             m_tagsList->addItem("暂无可用标签");
-            qDebug() << "m_tagsList 为空，已添加占位项";
         }
     } else {
-        qDebug() << "错误: m_tagsList 是 nullptr，无法刷新（检查 setupSubscriptionsDialog()）";
     }
 
     m_subscriptionsDialog->show();
@@ -883,7 +859,6 @@ void MainWindow::onSubscribeClicked()
     }
 
     int tagId = item->data(Qt::UserRole).toInt();
-    qDebug() << "准备订阅 tag_id =" << tagId;
 
     QJsonObject data;
     data["tag_id"] = tagId;
@@ -933,10 +908,8 @@ void MainWindow::loadTags()
 
 void MainWindow::loadSubscriptions()
 {
-    qDebug() << "loadSubscriptions 被调用，当前 m_userId =" << m_userId;
 
     if (m_userId <= 0) {
-        qDebug() << "用户 ID 无效，不加载订阅资源";
         m_subscribedResourcesList->clear();
         m_subscribedResourcesList->addItem("请先登录查看我的订阅");
         return;
@@ -971,7 +944,6 @@ void MainWindow::loadPendingResources()
     QNetworkReply *reply = m_networkManager->get(request);
     reply->setProperty("requestType", "review_resources");
 
-    qDebug() << "加载审核资源:" << status << "page=" << m_reviewPage;
 }
 
 void MainWindow::showError(const QString &message)

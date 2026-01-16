@@ -131,8 +131,13 @@ void MyResourcesWindow::onNetworkReply(QNetworkReply *reply)
         int id = r.value("id").toInt();
         QString title = r.value("title").toString();
         QString status = r.value("status").toString();
+        QString statusZh = status;
+        if (status == "pending") statusZh = "待审核";
+        else if (status == "approved") statusZh = "已审核通过";
+        else if (status == "rejected") statusZh = "审核未通过";
+        else if (status == "resolved") statusZh = "已处理";
 
-        QListWidgetItem *item = new QListWidgetItem(QString("%1  [%2]").arg(title).arg(status));
+        QListWidgetItem *item = new QListWidgetItem(QString("%1  [%2]").arg(title).arg(statusZh));
         item->setData(Qt::UserRole, id);
         m_list->addItem(item);
     }

@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     app.setOrganizationName("重庆师范大学");
     
     while (true) {
-        LoginWindow loginWindow;
+    LoginWindow loginWindow;
         if (loginWindow.exec() != QDialog::Accepted) {
             break;
         }
@@ -28,6 +28,6 @@ int main(int argc, char *argv[])
         mainWindow.show();
         app.exec();
     }
-
+    
     return 0;
 }

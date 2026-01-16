@@ -33,7 +33,7 @@ SQLALCHEMY_TRACK_MODIFICATIONS = False
 # AI服务配置
 AI_SERVICE_URL = os.environ.get('AI_SERVICE_URL', '')
 AI_SERVICE_API_KEY = os.environ.get('AI_SERVICE_API_KEY', '')
-AI_SERVICE_TIMEOUT = 5  # 秒
+AI_SERVICE_TIMEOUT = 30  # 秒
 
 # 允许的文件扩展名
 ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt', 'jpg', 'jpeg', 'png'}

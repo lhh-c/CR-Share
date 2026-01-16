@@ -285,13 +285,13 @@ void ResourceDetailWindow::onCommentSubmit()
         QMessageBox::warning(this, "错误", "评论内容不能为空");
         return;
     }
-
+    
     QJsonObject data;
     data["content"] = content;
     if (m_replyToCommentId > 0) {
         data["parent_id"] = m_replyToCommentId;
     }
-
+    
     QString url = QString("http://localhost:5000/api/resources/%1/comments").arg(m_resourceId);
     makeRequest(url, "POST", data);
 }
@@ -508,7 +508,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
         reply->deleteLater();
         return;
     }
-
+    
     // 处理评论提交成功
     if (statusCode == 201 && urlStr.contains("/comments")) {
         QMessageBox::information(this, "成功", "评论发表成功！");
@@ -589,7 +589,7 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                 QTreeWidgetItem *item;
                 if (parentItem) {
                     item = new QTreeWidgetItem(parentItem);
-                } else {
+        } else {
                     item = new QTreeWidgetItem(m_commentsTree);
                 }
                 item->setText(0, text);
@@ -599,8 +599,8 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                 QJsonArray replies = obj["replies"].toArray();
                 if (!replies.isEmpty()) {
                     buildTree(replies, item);
-                }
             }
+        }
         };
 
         if (!comments.isEmpty()) {
