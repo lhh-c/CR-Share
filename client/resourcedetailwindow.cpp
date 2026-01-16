@@ -10,12 +10,16 @@
 #include <QTimer>
 #include <QScrollBar>
 #include <QApplication>
+#include <QPdfDocument>
+#include <QPdfView>
 
 ResourceDetailWindow::ResourceDetailWindow(int resourceId, int userId, QWidget *parent)
     : QMainWindow(parent)
     , m_resourceId(resourceId)
     , m_userId(userId)
 {
+    m_fileType = "";
+    m_lastPdfPath = "";
     setWindowTitle("资源详情 - 享阅");
     setMinimumSize(900, 700);
     
@@ -43,6 +47,12 @@ void ResourceDetailWindow::setupUI()
     m_downloadBtn = new QPushButton("下载资源");
     layout->addWidget(m_downloadBtn);
     connect(m_downloadBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onDownloadClicked);
+
+    // 预览按钮（先默认禁用，拿到资源详情后再决定能不能用）
+    m_previewPdfBtn = new QPushButton("预览PDF");
+    m_previewPdfBtn->setEnabled(false);
+    layout->addWidget(m_previewPdfBtn);
+    connect(m_previewPdfBtn, &QPushButton::clicked, this, &ResourceDetailWindow::onPreviewPdfClicked);
     
     // 评论区域
     m_commentGroup = new QGroupBox("评论");
@@ -98,13 +108,51 @@ void ResourceDetailWindow::loadComments()
 void ResourceDetailWindow::onDownloadClicked()
 {
     QString url = QString("http://localhost:5000/api/resources/%1/download").arg(m_resourceId);
-    
+
     QNetworkRequest request{QUrl(url)};
     request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
-    
+
     QNetworkReply *reply = m_networkManager->get(request);
     reply->setProperty("requestType", "download");
     reply->setProperty("resourceId", m_resourceId);
+}
+
+void ResourceDetailWindow::onPreviewPdfClicked()
+{
+    // 只支持 PDF
+    if (m_fileType.toLower() != "pdf") {
+        QMessageBox::information(this, "提示", "这个资源不是PDF，暂时不支持预览");
+        return;
+    }
+
+    // 如果之前下载过并保存了路径，直接打开
+    if (!m_lastPdfPath.isEmpty() && QFile::exists(m_lastPdfPath)) {
+        QPdfDocument *doc = new QPdfDocument(this);
+        if (doc->load(m_lastPdfPath) != QPdfDocument::Error::None) {
+            QMessageBox::warning(this, "错误", "PDF打开失败");
+            return;
+        }
+
+        QPdfView *view = new QPdfView();
+        view->setWindowTitle("PDF预览");
+        view->resize(900, 700);
+        view->setDocument(doc);
+        view->show();
+        return;
+    }
+
+    // 没有文件：直接请求下载到临时目录，然后预览（类似在线预览）
+    QString url = QString("http://localhost:5000/api/resources/%1/download").arg(m_resourceId);
+
+    QNetworkRequest request{QUrl(url)};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+
+    QNetworkReply *reply = m_networkManager->get(request);
+    reply->setProperty("requestType", "preview_download");
+    reply->setProperty("resourceId", m_resourceId);
+
+    m_previewPdfBtn->setEnabled(false);
+    m_previewPdfBtn->setText("正在加载...");
 }
 
 void ResourceDetailWindow::onCommentSubmit()
@@ -174,24 +222,60 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
     QString method = reply->property("method").toString();
     
     // 处理文件下载
-    if (reply->property("requestType").toString() == "download") {
+    if (reply->property("requestType").toString() == "download" || reply->property("requestType").toString() == "preview_download") {
         QByteArray fileData = reply->readAll();
         QString suggestedFileName = QString("resource_%1.pdf").arg(m_resourceId);
         
-        QString savePath = QFileDialog::getSaveFileName(
-            this, "保存资源文件", QDir::homePath() + "/" + suggestedFileName,
-            "PDF 文件 (*.pdf);;所有文件 (*.*)");
-        
-        if (!savePath.isEmpty()) {
-            QFile file(savePath);
+        if (reply->property("requestType").toString() == "preview_download") {
+            QString tmpPath = QDir::tempPath() + QString("/xiangyue_preview_%1.pdf").arg(m_resourceId);
+            QFile file(tmpPath);
             if (file.open(QIODevice::WriteOnly)) {
                 file.write(fileData);
                 file.close();
-                QMessageBox::information(this, "成功", "文件下载成功！");
+
+                m_lastPdfPath = tmpPath;
+                m_previewPdfBtn->setEnabled(true);
+                m_previewPdfBtn->setText("预览PDF");
+
+                QPdfDocument *doc = new QPdfDocument(this);
+                if (doc->load(m_lastPdfPath) != QPdfDocument::Error::None) {
+                    QMessageBox::warning(this, "错误", "PDF打开失败");
+                    reply->deleteLater();
+                    return;
+                }
+
+                QPdfView *view = new QPdfView();
+                view->setWindowTitle("PDF预览");
+                view->resize(900, 700);
+                view->setDocument(doc);
+                view->show();
             } else {
-                QMessageBox::warning(this, "错误", "无法保存文件");
+                QMessageBox::warning(this, "错误", "无法缓存PDF用于预览");
+                m_previewPdfBtn->setEnabled(true);
+                m_previewPdfBtn->setText("预览PDF");
+            }
+        } else {
+            QString savePath = QFileDialog::getSaveFileName(
+                this, "保存资源文件", QDir::homePath() + "/" + suggestedFileName,
+                "PDF 文件 (*.pdf);;所有文件 (*.*)");
+
+            if (!savePath.isEmpty()) {
+                QFile file(savePath);
+                if (file.open(QIODevice::WriteOnly)) {
+                    file.write(fileData);
+                    file.close();
+                    QMessageBox::information(this, "成功", "文件下载成功！");
+
+                    if (savePath.toLower().endsWith(".pdf")) {
+                        m_lastPdfPath = savePath;
+                        m_previewPdfBtn->setEnabled(true);
+                    }
+                } else {
+                    QMessageBox::warning(this, "错误", "无法保存文件");
+                }
             }
         }
+
         reply->deleteLater();
         return;
     }
@@ -240,6 +324,15 @@ void ResourceDetailWindow::onNetworkReply(QNetworkReply *reply)
                          .arg(json["download_count"].toInt())
                          .arg(tagList.join(", "));
         m_resourceDetails->setPlainText(details);
+
+        m_fileType = json["file_type"].toString();
+        if (m_previewPdfBtn) {
+            if (m_fileType.toLower() == "pdf") {
+                m_previewPdfBtn->setEnabled(true);
+            } else {
+                m_previewPdfBtn->setEnabled(false);
+            }
+        }
     }
     
     // 处理评论列表

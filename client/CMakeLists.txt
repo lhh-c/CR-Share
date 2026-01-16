@@ -5,7 +5,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # 查找Qt组件
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Pdf PdfWidgets)
 
 # 设置Qt的MOC、UIC、RCC自动处理
 set(CMAKE_AUTOMOC ON)
@@ -36,6 +36,8 @@ target_link_libraries(${PROJECT_NAME}
     Qt6::Core
     Qt6::Widgets
     Qt6::Network
+    Qt6::Pdf
+    Qt6::PdfWidgets
 )
 
 # 设置输出目录

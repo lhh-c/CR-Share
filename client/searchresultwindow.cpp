@@ -109,13 +109,9 @@ void SearchResultWindow::loadSearchResults()
         query.addQueryItem("tag_id", m_tagFilter);  // 服务端用 tag_id
     }
 
-// <<<<<<< Updated upstream
-    query.addQueryItem("limit", "50");  // 限制结果数量，避免太多
-// =======
-//     query.addQueryItem("page", QString::number(m_page));
-//     query.addQueryItem("page_size", QString::number(m_pageSize));
-//     query.addQueryItem("sort", "smart");
-// >>>>>>> Stashed changes
+    query.addQueryItem("page", QString::number(m_page));
+    query.addQueryItem("page_size", QString::number(m_pageSize));
+    query.addQueryItem("sort", "smart");
 
     url.setQuery(query);
 
