@@ -10,6 +10,7 @@
 #include <QJsonObject>
 #include <QJsonArray>
 #include <QPushButton>
+#include <QComboBox>
 
 class SearchResultWindow : public QMainWindow
 {
@@ -33,10 +34,13 @@ private:
 
     QListWidget *m_resultList;
     QLabel *m_statusLabel;
+    QComboBox *m_sortCombo;
     QLabel *m_pageLabel;
     QPushButton *m_prevButton;
     QPushButton *m_nextButton;
     QNetworkAccessManager *m_networkManager;
+
+    QString m_sort = "relevance";
 
     int m_page = 1;
     int m_pageSize = 20;

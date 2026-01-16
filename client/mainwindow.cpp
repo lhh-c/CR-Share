@@ -295,9 +295,14 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
 
         qDebug() << "标签加载完成，总数:" << tagsArray.size();
     }
-    else if (urlStr.contains("/api/subscriptions/resources")) {
+    else if (reply->property("requestType").toString() == "subscription_resources") {
+        m_subPage = json["page"].toInt(1);
+        m_subPageSize = json["page_size"].toInt(10);
+        m_subTotal = json["total"].toInt(0);
+
         QJsonArray resources = json["resources"].toArray();
-        qDebug() << "订阅资源加载完成，数量:" << resources.size();
+        qDebug() << "订阅资源加载完成，数量:" << resources.size() << "总数:" << m_subTotal;
+        
         m_subscribedResourcesList->clear();
         for (const QJsonValue &val : resources) {
             QJsonObject res = val.toObject();
@@ -308,8 +313,18 @@ void MainWindow::onNetworkReply(QNetworkReply *reply)
             m_subscribedResourcesList->addItem(item);
         }
         if (resources.isEmpty()) {
-            m_subscribedResourcesList->addItem("暂无订阅资源");
+            QListWidgetItem *emptyItem = new QListWidgetItem("暂无订阅资源");
+            emptyItem->setFlags(emptyItem->flags() & ~Qt::ItemIsSelectable);
+            m_subscribedResourcesList->addItem(emptyItem);
         }
+
+        // 更新分页UI
+        int totalPages = (m_subTotal + m_subPageSize - 1) / m_subPageSize;
+        if (totalPages <= 0) totalPages = 1;
+
+        m_subPageLabel->setText(QString("第 %1/%2 页").arg(m_subPage).arg(totalPages));
+        m_subPrevBtn->setEnabled(m_subPage > 1);
+        m_subNextBtn->setEnabled(m_subPage < totalPages);
     }
     else if (reply->property("requestType").toString() == "pendingResources" ||
              urlStr.contains("/api/resources?status=pending")) {
@@ -512,6 +527,7 @@ void MainWindow::onSubscriptionsClicked()
 
     m_subscriptionsDialog->show();
 
+    m_subPage = 1;
     loadSubscriptions();
 }
 
@@ -536,6 +552,32 @@ void MainWindow::setupSubscriptionsDialog()
     subResourcesLayout->addWidget(new QLabel("订阅的资源:"));
     m_subscribedResourcesList = new QListWidget();
     subResourcesLayout->addWidget(m_subscribedResourcesList);
+
+    QHBoxLayout *pagerLayout = new QHBoxLayout();
+    m_subPrevBtn = new QPushButton("上一页");
+    m_subNextBtn = new QPushButton("下一页");
+    m_subPageLabel = new QLabel();
+    m_subPageLabel->setAlignment(Qt::AlignCenter);
+    pagerLayout->addWidget(m_subPrevBtn);
+    pagerLayout->addWidget(m_subPageLabel, 1);
+    pagerLayout->addWidget(m_subNextBtn);
+    subResourcesLayout->addLayout(pagerLayout);
+
+    connect(m_subPrevBtn, &QPushButton::clicked, this, [this]() {
+        if (m_subPage > 1) {
+            m_subPage -= 1;
+            loadSubscriptions();
+        }
+    });
+
+    connect(m_subNextBtn, &QPushButton::clicked, this, [this]() {
+        int totalPages = (m_subTotal + m_subPageSize - 1) / m_subPageSize;
+        if (totalPages <= 0) totalPages = 1;
+        if (m_subPage < totalPages) {
+            m_subPage += 1;
+            loadSubscriptions();
+        }
+    });
 
     layout->addLayout(tagsLayout);
     layout->addLayout(subResourcesLayout);
@@ -686,7 +728,14 @@ void MainWindow::loadSubscriptions()
         return;
     }
 
-    makeRequest("http://localhost:5000/api/subscriptions/resources", "GET");
+    QString url = QString("http://localhost:5000/api/subscriptions/resources?page=%1&page_size=%2")
+                  .arg(m_subPage).arg(m_subPageSize);
+    
+    QNetworkRequest request{QUrl(url)};
+    request.setRawHeader("X-User-Id", QString::number(m_userId).toUtf8());
+
+    QNetworkReply *reply = m_networkManager->get(request);
+    reply->setProperty("requestType", "subscription_resources");
 }
 
 void MainWindow::loadPendingResources()

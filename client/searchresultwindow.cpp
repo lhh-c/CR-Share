@@ -40,6 +40,16 @@ void SearchResultWindow::setupUI()
     m_statusLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #333;");
     layout->addWidget(m_statusLabel);
 
+    QHBoxLayout *sortLayout = new QHBoxLayout();
+    sortLayout->addWidget(new QLabel("排序:"));
+    m_sortCombo = new QComboBox();
+    m_sortCombo->addItem("相关性", "relevance");
+    m_sortCombo->addItem("时间", "new");
+    m_sortCombo->addItem("浏览量", "views");
+    sortLayout->addWidget(m_sortCombo);
+    sortLayout->addStretch();
+    layout->addLayout(sortLayout);
+
     // 结果列表
     m_resultList = new QListWidget();
     m_resultList->setStyleSheet("QListWidget { font-size: 14px; }");
@@ -59,6 +69,12 @@ void SearchResultWindow::setupUI()
 
     connect(m_resultList, &QListWidget::itemClicked,
             this, &SearchResultWindow::onResourceSelected);
+
+    connect(m_sortCombo, &QComboBox::currentIndexChanged, this, [this](int) {
+        m_sort = m_sortCombo->currentData().toString();
+        m_page = 1;
+        loadSearchResults();
+    });
     connect(m_prevButton, &QPushButton::clicked, this, [this]() {
         if (m_page > 1) {
             m_page -= 1;
@@ -111,7 +127,7 @@ void SearchResultWindow::loadSearchResults()
 
     query.addQueryItem("page", QString::number(m_page));
     query.addQueryItem("page_size", QString::number(m_pageSize));
-    query.addQueryItem("sort", "smart");
+    query.addQueryItem("sort", m_sort);
 
     url.setQuery(query);
 

@@ -80,6 +80,14 @@ private:
     QPushButton *m_subscribeBtn;
     QListWidget *m_subscribedResourcesList;
     QPushButton *m_unsubscribeBtn;
+
+    // 订阅资源分页（简单做法）
+    QPushButton *m_subPrevBtn;
+    QPushButton *m_subNextBtn;
+    QLabel *m_subPageLabel;
+    int m_subPage = 1;
+    int m_subPageSize = 10;
+    int m_subTotal = 0;
     
     // 审核对话框相关（保留用于审核功能）
     QDialog *m_reviewDialog;
